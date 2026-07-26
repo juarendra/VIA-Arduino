@@ -1,0 +1,327 @@
+#include "VIA_Protocol.h"
+
+#include <string.h>
+
+namespace via {
+namespace {
+
+constexpr uint32_t kStateMagic = 0x56494141UL;  // "VIAA"
+constexpr uint16_t kStateVersion = 1;
+
+struct __attribute__((packed)) StateHeader {
+  uint32_t magic;
+  uint16_t version;
+  uint16_t payloadSize;
+  uint32_t crc;
+};
+
+uint32_t crc32Update(uint32_t crc, uint8_t value) {
+  crc ^= value;
+  for (uint8_t bit = 0; bit < 8; ++bit) {
+    crc = (crc >> 1) ^ (0xEDB88320UL & (-(int32_t)(crc & 1U)));
+  }
+  return crc;
+}
+
+}  // namespace
+
+Protocol::Protocol(const Config& config, Transport& transport, Storage* storage,
+                   CustomValue* customValue, Callbacks* callbacks)
+    : config_(config),
+      transport_(transport),
+      storage_(storage),
+      customValue_(customValue),
+      callbacks_(callbacks),
+      dirty_(false),
+      saveAt_(0) {}
+
+bool Protocol::begin(uint32_t nowMs) {
+  if (config_.rows == 0 || config_.columns == 0 || config_.layers == 0 ||
+      config_.keymap == nullptr || config_.defaultKeymap == nullptr ||
+      (config_.macroBytes != 0 && config_.macros == nullptr)) {
+    return false;
+  }
+  if (!load()) resetBuffers();
+  dirty_ = false;
+  saveAt_ = nowMs + config_.autoSaveMs;
+  return true;
+}
+
+void Protocol::task(uint32_t nowMs) {
+  uint8_t packet[kPacketSize];
+  if (transport_.receive(packet)) {
+    process(packet, nowMs);
+    transport_.send(packet);
+  }
+  if (dirty_ && static_cast<int32_t>(nowMs - saveAt_) >= 0) save();
+}
+
+bool Protocol::process(uint8_t packet[kPacketSize], uint32_t nowMs) {
+  switch (packet[0]) {
+    case 0x01:  // get protocol version
+      packet[1] = 0;
+      packet[2] = kProtocolVersion;
+      break;
+    case 0x02:  // get keyboard value
+      switch (packet[1]) {
+        case 0x01:  // uptime
+          packet[2] = static_cast<uint8_t>(nowMs >> 24);
+          packet[3] = static_cast<uint8_t>(nowMs >> 16);
+          packet[4] = static_cast<uint8_t>(nowMs >> 8);
+          packet[5] = static_cast<uint8_t>(nowMs);
+          break;
+        case 0x02:  // fixed layout options
+          packet[2] = packet[3] = packet[4] = packet[5] = 0;
+          break;
+        case 0x03:  // switch matrix state, two rows per reply
+          packet[3] = callbacks_ && packet[2] < config_.rows
+                          ? callbacks_->matrixRow(packet[2])
+                          : 0;
+          packet[4] = callbacks_ && packet[2] + 1 < config_.rows
+                          ? callbacks_->matrixRow(packet[2] + 1)
+                          : 0;
+          break;
+        case 0x04:  // firmware version
+          packet[2] = static_cast<uint8_t>(config_.firmwareVersion >> 24);
+          packet[3] = static_cast<uint8_t>(config_.firmwareVersion >> 16);
+          packet[4] = static_cast<uint8_t>(config_.firmwareVersion >> 8);
+          packet[5] = static_cast<uint8_t>(config_.firmwareVersion);
+          break;
+        case 0x06:  // QMK keycodes version 0.0.8
+          packet[2] = packet[3] = packet[4] = 0;
+          packet[5] = 8;
+          break;
+        default:
+          packet[0] = 0xFF;
+      }
+      break;
+    case 0x03:  // set keyboard value
+      if (packet[1] == 0x05) {
+        if (callbacks_) callbacks_->deviceIndication(true);
+      } else if (packet[1] != 0x02) {
+        packet[0] = 0xFF;
+      }
+      break;
+    case 0x04: {  // dynamic keymap get keycode
+      const uint16_t code = keycode(packet[1], packet[2], packet[3]);
+      packet[4] = static_cast<uint8_t>(code >> 8);
+      packet[5] = static_cast<uint8_t>(code);
+      break;
+    }
+    case 0x05:  // dynamic keymap set keycode
+      if (!setKeycode(packet[1], packet[2], packet[3],
+                      static_cast<uint16_t>(packet[4] << 8 | packet[5]))) {
+        packet[0] = 0xFF;
+      } else {
+        markDirty(nowMs);
+      }
+      break;
+    case 0x06:  // dynamic keymap reset
+      resetBuffers();
+      markDirty(nowMs);
+      break;
+    case 0x07:  // set custom value
+      if (!customValue_ || !customValue_->set(packet)) packet[0] = 0xFF;
+      else markDirty(nowMs);
+      break;
+    case 0x08:  // get custom value
+      if (!customValue_ || !customValue_->get(packet)) packet[0] = 0xFF;
+      break;
+    case 0x09:  // EEPROM reset / commit
+      if (packet[1] != 0x02 || !save()) packet[0] = 0xFF;
+      break;
+    case 0x0A:  // reset EEPROM
+      if (!factoryReset()) packet[0] = 0xFF;
+      break;
+    case 0x0C:  // get macro count
+      packet[1] = config_.macroCount;
+      break;
+    case 0x0D:  // get macro buffer size
+      packet[1] = static_cast<uint8_t>(config_.macroBytes >> 8);
+      packet[2] = static_cast<uint8_t>(config_.macroBytes);
+      break;
+    case 0x0E: {  // get macro buffer
+      const uint16_t offset = static_cast<uint16_t>(packet[1] << 8 | packet[2]);
+      const uint8_t size = packet[3] > 28 ? 28 : packet[3];
+      for (uint8_t i = 0; i < size; ++i) {
+        packet[4 + i] = offset + i < config_.macroBytes ? config_.macros[offset + i] : 0;
+      }
+      break;
+    }
+    case 0x0F: {  // set macro buffer
+      const uint16_t offset = static_cast<uint16_t>(packet[1] << 8 | packet[2]);
+      const uint8_t size = packet[3] > 28 ? 28 : packet[3];
+      for (uint8_t i = 0; i < size; ++i) {
+        if (offset + i < config_.macroBytes) config_.macros[offset + i] = packet[4 + i];
+      }
+      markDirty(nowMs);
+      break;
+    }
+    case 0x10:  // reset macros
+      if (config_.macroBytes) memset(config_.macros, 0, config_.macroBytes);
+      markDirty(nowMs);
+      break;
+    case 0x11:  // get layer count
+      packet[1] = config_.layers;
+      break;
+    case 0x12: {  // get dynamic keymap buffer
+      const uint16_t offset = static_cast<uint16_t>(packet[1] << 8 | packet[2]);
+      readDynamicKeymap(offset, packet[3] > 28 ? 28 : packet[3], &packet[4]);
+      break;
+    }
+    case 0x13: {  // set dynamic keymap buffer
+      const uint16_t offset = static_cast<uint16_t>(packet[1] << 8 | packet[2]);
+      writeDynamicKeymap(offset, packet[3] > 28 ? 28 : packet[3], &packet[4], nowMs);
+      break;
+    }
+    default:
+      packet[0] = 0xFF;
+  }
+  return packet[0] != 0xFF;
+}
+
+uint16_t Protocol::keycode(uint8_t layer, uint8_t row, uint8_t column) const {
+  if (layer >= config_.layers || row >= config_.rows || column >= config_.columns) return 0;
+  return config_.keymap[(static_cast<size_t>(layer) * config_.rows + row) *
+                         config_.columns + column];
+}
+
+bool Protocol::setKeycode(uint8_t layer, uint8_t row, uint8_t column, uint16_t value) {
+  if (layer >= config_.layers || row >= config_.rows || column >= config_.columns) return false;
+  config_.keymap[(static_cast<size_t>(layer) * config_.rows + row) *
+                 config_.columns + column] = value;
+  return true;
+}
+
+void Protocol::resetBuffers() {
+  memcpy(config_.keymap, config_.defaultKeymap, keymapBytes());
+  if (config_.macroBytes) memset(config_.macros, 0, config_.macroBytes);
+}
+
+void Protocol::markDirty(uint32_t nowMs) {
+  dirty_ = true;
+  saveAt_ = nowMs + config_.autoSaveMs;
+  if (callbacks_) callbacks_->changed();
+}
+
+size_t Protocol::keyCount() const {
+  return static_cast<size_t>(config_.rows) * config_.columns * config_.layers;
+}
+
+size_t Protocol::keymapBytes() const { return keyCount() * sizeof(uint16_t); }
+
+size_t Protocol::stateBytes() const {
+  return keymapBytes() + config_.macroBytes +
+         (customValue_ ? customValue_->stateSize() : 0);
+}
+
+uint32_t Protocol::stateCrc() const {
+  uint32_t crc = 0xFFFFFFFFUL;
+  const uint8_t* keymap = reinterpret_cast<const uint8_t*>(config_.keymap);
+  for (size_t i = 0; i < keymapBytes(); ++i) crc = crc32Update(crc, keymap[i]);
+  for (uint16_t i = 0; i < config_.macroBytes; ++i) crc = crc32Update(crc, config_.macros[i]);
+  if (customValue_) {
+    uint8_t state[16];
+    const size_t size = customValue_->stateSize();
+    if (size > sizeof(state) || !customValue_->saveState(state, size)) return 0;
+    for (size_t i = 0; i < size; ++i) crc = crc32Update(crc, state[i]);
+  }
+  return ~crc;
+}
+
+bool Protocol::load() {
+  if (!storage_ || storage_->capacity() < sizeof(StateHeader) + stateBytes()) return false;
+  StateHeader header;
+  if (!storage_->read(0, reinterpret_cast<uint8_t*>(&header), sizeof(header)) ||
+      header.magic != kStateMagic || header.version != kStateVersion ||
+      header.payloadSize != stateBytes()) return false;
+  size_t offset = sizeof(header);
+  if (!storage_->read(offset, reinterpret_cast<uint8_t*>(config_.keymap), keymapBytes())) return false;
+  offset += keymapBytes();
+  if (config_.macroBytes && !storage_->read(offset, config_.macros, config_.macroBytes)) return false;
+  offset += config_.macroBytes;
+  uint8_t customState[16];
+  size_t customSize = 0;
+  if (customValue_ && customValue_->stateSize()) {
+    customSize = customValue_->stateSize();
+    if (customSize > sizeof(customState) ||
+        !storage_->read(offset, customState, customSize)) return false;
+  }
+  uint32_t crc = 0xFFFFFFFFUL;
+  const uint8_t* keymap = reinterpret_cast<const uint8_t*>(config_.keymap);
+  for (size_t i = 0; i < keymapBytes(); ++i) crc = crc32Update(crc, keymap[i]);
+  for (uint16_t i = 0; i < config_.macroBytes; ++i) crc = crc32Update(crc, config_.macros[i]);
+  for (size_t i = 0; i < customSize; ++i) crc = crc32Update(crc, customState[i]);
+  if (~crc != header.crc) return false;
+  return !customSize || customValue_->loadState(customState, customSize);
+}
+
+bool Protocol::save() {
+  if (!storage_) return false;
+  return writeState();
+}
+
+bool Protocol::writeState() {
+  const size_t bytes = stateBytes();
+  if (storage_->capacity() < sizeof(StateHeader) + bytes) return false;
+  StateHeader header = {kStateMagic, kStateVersion, static_cast<uint16_t>(bytes), 0};
+  if (!storage_->write(0, reinterpret_cast<const uint8_t*>(&header), sizeof(header))) return false;
+  size_t offset = sizeof(header);
+  if (!storage_->write(offset, reinterpret_cast<const uint8_t*>(config_.keymap), keymapBytes())) return false;
+  offset += keymapBytes();
+  if (config_.macroBytes && !storage_->write(offset, config_.macros, config_.macroBytes)) return false;
+  offset += config_.macroBytes;
+  if (customValue_ && customValue_->stateSize()) {
+    uint8_t state[16];
+    const size_t size = customValue_->stateSize();
+    if (size > sizeof(state) || !customValue_->saveState(state, size) ||
+        !storage_->write(offset, state, size)) return false;
+  }
+  header.crc = stateCrc();
+  if (!storage_->write(0, reinterpret_cast<const uint8_t*>(&header), sizeof(header)) ||
+      !storage_->commit()) return false;
+  dirty_ = false;
+  return true;
+}
+
+bool Protocol::factoryReset() {
+  resetBuffers();
+  if (customValue_ && customValue_->stateSize()) {
+    uint8_t state[16] = {};
+    if (customValue_->stateSize() > sizeof(state) ||
+        !customValue_->loadState(state, customValue_->stateSize())) return false;
+  }
+  if (!storage_) return false;
+  if (!storage_->erase()) return false;
+  dirty_ = true;
+  return save();
+}
+
+void Protocol::readDynamicKeymap(uint16_t offset, uint8_t size, uint8_t* output) const {
+  const size_t bytes = keymapBytes();
+  for (uint8_t i = 0; i < size; ++i) {
+    const size_t index = offset + i;
+    if (index >= bytes) {
+      output[i] = 0;
+      continue;
+    }
+    const uint16_t keycode = config_.keymap[index / 2];
+    output[i] = (index & 1U) ? static_cast<uint8_t>(keycode)
+                              : static_cast<uint8_t>(keycode >> 8);
+  }
+}
+
+void Protocol::writeDynamicKeymap(uint16_t offset, uint8_t size, const uint8_t* input,
+                                  uint32_t nowMs) {
+  const size_t bytes = keymapBytes();
+  for (uint8_t i = 0; i < size; ++i) {
+    const size_t index = offset + i;
+    if (index >= bytes) continue;
+    uint16_t& keycode = config_.keymap[index / 2];
+    keycode = (index & 1U) ? static_cast<uint16_t>((keycode & 0xFF00U) | input[i])
+                           : static_cast<uint16_t>((keycode & 0x00FFU) | (input[i] << 8));
+  }
+  markDirty(nowMs);
+}
+
+}  // namespace via

@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: arduino/arduino-lint-action@v2
+        with:
+          library-manager: submit
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build native protocol test
+        run: |
+          g++ -std=c++11 -Wall -Wextra -Werror -Isrc \
+            tests/protocol_test.cpp src/VIA_Protocol.cpp src/VIA_RGBLight.cpp \
+            -o protocol_test
+          ./protocol_test
+      - uses: arduino/setup-arduino-cli@v2
+      - name: Compile Arduino example
+        run: |
+          arduino-cli core update-index
+          arduino-cli core install arduino:avr
+          arduino-cli compile --fqbn arduino:avr:uno --libraries . \
+            examples/Protocol_Self_Test

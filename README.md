@@ -34,7 +34,7 @@ Arduino core or a board adapter owns USB descriptors and endpoints.
 
 | Target | Core status | USB adapter status |
 | --- | --- | --- |
-| RP2040 with TinyUSB | Supported by protocol core | First reference adapter planned |
+| RP2040 with TinyUSB | Supported by protocol core | ✅ `VIA_TinyUSB_RawHID` reference adapter |
 | ESP32-S2/S3 TinyUSB | Supported by protocol core | First reference adapter planned |
 | SAMD / nRF52 TinyUSB | Supported by protocol core | Adapter required |
 | STM32 native USB | Supported by protocol core | Adapter required |
@@ -107,7 +107,7 @@ descriptors automatically—those are board-level responsibilities.
 
 Planned next milestones:
 
-1. RP2040 TinyUSB Raw HID + keyboard composite reference adapter.
+1. RP2040 physical-key, mouse, and consumer-control integration example.
 2. ESP32-S2/S3 TinyUSB adapter and Preferences/NVS storage adapter.
 3. SAMD and STM32 adapters, dual-page flash persistence examples, mouse and
    consumer report helpers.
@@ -116,6 +116,7 @@ Planned next milestones:
 ## Documentation
 
 - [Porting a USB and storage adapter](docs/PORTING.md)
+- [RP2040 TinyUSB example](examples/RP2040_VIA_RawHID/RP2040_VIA_RawHID.ino)
 - [Arduino Library Manager readiness](docs/ARDUINO_LIBRARY_MANAGER.md)
 - [Protocol self-test](examples/Protocol_Self_Test/Protocol_Self_Test.ino)
 - [Changelog](CHANGELOG.md)

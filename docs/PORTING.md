@@ -36,6 +36,18 @@ class MyRawHidTransport : public via::Transport {
 Call `keyboard.task(millis())` often from `loop()`. It receives one request,
 updates the supplied buffer as the VIA response, and sends it back.
 
+### RP2040 reference adapter
+
+`VIA_TinyUSB_RawHID.h` provides the first concrete adapter for RP2040 boards
+using the Earle Philhower Arduino-Pico core with **Tools → USB Stack → Adafruit
+TinyUSB**. Install **Adafruit TinyUSB Library**, create `via::tinyusb::RawHID`,
+call `begin()` before USB enumeration, and pass it to `via::Protocol`.
+
+The reference adapter deliberately provides only the vendor Raw HID interface.
+Create a second TinyUSB HID interface for keyboard reports in the application;
+the two interfaces must not share report IDs. See
+[`RP2040_VIA_RawHID`](../examples/RP2040_VIA_RawHID/RP2040_VIA_RawHID.ino).
+
 ## 3. Implement `via::Storage`
 
 Use a reserved region that is large enough for:

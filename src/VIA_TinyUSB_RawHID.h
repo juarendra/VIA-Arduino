@@ -4,6 +4,8 @@
 
 #if __has_include(<Adafruit_TinyUSB.h>)
 
+#define VIA_ARDUINO_HAS_TINYUSB 1
+
 #include <Adafruit_TinyUSB.h>
 
 namespace via {
@@ -37,6 +39,6 @@ class RawHID : public Transport {
 
 #else
 
-#error "VIA_TinyUSB_RawHID requires Adafruit TinyUSB Library. Install it and select a TinyUSB USB stack."
+#define VIA_ARDUINO_HAS_TINYUSB 0
 
-#endif
+#endif  // __has_include(<Adafruit_TinyUSB.h>)

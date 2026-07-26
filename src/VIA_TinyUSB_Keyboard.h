@@ -24,8 +24,4 @@ class Keyboard {
 }  // namespace tinyusb
 }  // namespace via
 
-#else
-
-#error "VIA_TinyUSB_Keyboard requires Adafruit TinyUSB Library."
-
-#endif
+#endif  // __has_include(<Adafruit_TinyUSB.h>)

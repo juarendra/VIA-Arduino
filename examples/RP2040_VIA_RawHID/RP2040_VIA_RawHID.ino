@@ -11,6 +11,7 @@
  */
 
 #include <Adafruit_TinyUSB.h>
+#include <EEPROM.h>  // Ensure Arduino CLI discovers the RP2040 EEPROM library.
 #include <VIA_Arduino.h>
 #include <VIA_EEPROMStorage.h>
 #include <VIA_TinyUSB_Keyboard.h>

@@ -33,7 +33,7 @@ bool Keyboard::release() {
   return report(0, empty);
 }
 
-bool Keyboard::ready() const { return hid_.ready(); }
+bool Keyboard::ready() { return hid_.ready(); }
 
 }  // namespace tinyusb
 }  // namespace via

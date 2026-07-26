@@ -61,7 +61,7 @@ bool RawHID::send(const uint8_t packet[kPacketSize]) {
   return hid_.ready() && hid_.sendReport(0, packet, kPacketSize);
 }
 
-bool RawHID::ready() const { return hid_.ready(); }
+bool RawHID::ready() { return hid_.ready(); }
 
 void RawHID::setReport(uint8_t reportId, hid_report_type_t reportType,
                        uint8_t const* buffer, uint16_t length) {

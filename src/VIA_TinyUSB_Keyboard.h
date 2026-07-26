@@ -15,7 +15,7 @@ class Keyboard {
   bool begin(const char* interfaceName = "VIA Keyboard");
   bool report(uint8_t modifiers, const uint8_t keys[6]);
   bool release();
-  bool ready() const;
+  bool ready();
 
  private:
   Adafruit_USBD_HID hid_;

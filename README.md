@@ -4,7 +4,7 @@
 
 Drive **massive 32-column matrices** effortlessly • **Native Bootloader Jump Support** • **Dynamic EEPROM Mapping** • [**Built for Custom Keyboards**](https://github.com/juarendra/VIA-Arduino)
 
-[![Build Status](https://github.com/juarendra/VIA-Arduino/actions/workflows/build.yml/badge.svg)](https://github.com/juarendra/VIA-Arduino/actions/workflows/build.yml) [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) [![Community](https://img.shields.io/badge/github-juarendra-orange.svg?logo=github)](https://github.com/juarendra) [![Library Size](https://img.shields.io/badge/Size-Ultra%20Light-brightgreen.svg)]()
+[![Platform](https://img.shields.io/badge/Platform-Arduino-blue.svg)](https://www.arduino.cc/) [![Version](https://img.shields.io/badge/Version-1.0.0-brightgreen.svg)]() [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) [![Community](https://img.shields.io/badge/github-juarendra-orange.svg?logo=github)](https://github.com/juarendra) [![Library Size](https://img.shields.io/badge/Size-Ultra%20Light-brightgreen.svg)]()
 
 ## ⚡ Get Configured in 30 Seconds
 

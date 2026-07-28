@@ -43,6 +43,46 @@ public:
 **🎯 Performance**: Intelligent dynamic byte packing scales memory overhead exactly to your column count.
 **🔧 Developer Experience**: Pure Object-Oriented callbacks • Automatically detected by VIA web interface.
 
+## 💡 Advanced Usage Example
+
+```cpp
+// Advanced Usage: Deep VIA Integration with 32-Column Support
+#include <VIA_Protocol.h>
+
+class MyCustomKeyboard : public via::Callbacks {
+public:
+  // Dynamically map a custom split keyboard matrix
+  uint32_t matrixRow(uint8_t row) const override {
+    uint32_t state = 0;
+    // Iterate through up to 32 columns dynamically!
+    for(int col = 0; col < 12; col++) {
+      if(isKeyPressed(row, col)) {
+        state |= (1UL << col); // Shift bits dynamically based on column count
+      }
+    }
+    return state; 
+  }
+  
+  // Respond to VIA Configurator's remote flash request (Command 0x0B)
+  void bootloaderJump() override {
+    Serial.println("VIA Command 0x0B received. Entering Bootloader...");
+    // Platform specific jump code goes here (e.g., Pico or Teensy)
+    reset_usb_boot(0, 0); 
+  }
+};
+
+MyCustomKeyboard keyboard;
+
+void setup() {
+  // Initialize USB HID endpoints...
+}
+
+void loop() {
+  // Feed incoming raw USB HID packets into the protocol engine
+  // keyboard.handleData(rx_buffer, 32);
+}
+```
+
 ## 📚 Core API Reference
 
 - `virtual uint32_t matrixRow(uint8_t row)`: Override this to return the bitmask of pressed keys for a given row. Now supports up to 32 bits (columns).

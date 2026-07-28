@@ -44,9 +44,10 @@ class CustomValue {
 class Callbacks {
  public:
   virtual ~Callbacks() {}
-  virtual uint8_t matrixRow(uint8_t row) const { (void)row; return 0; }
+  virtual uint32_t matrixRow(uint8_t row) const { (void)row; return 0; }
   virtual void deviceIndication(bool enabled) { (void)enabled; }
   virtual void changed() {}
+  virtual void bootloaderJump() {}
 };
 
 struct Config {

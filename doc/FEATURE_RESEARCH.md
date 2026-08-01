@@ -28,10 +28,14 @@ committing staged state. Every storage-backed `Protocol` requires a distinct,
 caller-owned `loadBuffer` sized by `requiredLoadBufferSize()`. The core rejects
 overlap with mutable or default keymap and encoder-map buffers, and with the
 macro buffer. The caller must keep `CustomValue` handler-owned active state
-separate because the core cannot inspect it. Factory reset stages defaults in
-the same workspace and publishes live state and callbacks only after durable
-storage commit. Successful stored/default loads and resets notify the final
-layout value; failed direct loads and resets do not notify.
+separate because the core cannot inspect it. Staged custom bytes pass through
+non-mutating `CustomValue::validateState()` before direct-load publication or
+factory-reset storage mutation. Handlers that can reject bytes must override
+validation; acceptance guarantees `loadState()` publishes those same bytes.
+Factory reset stages defaults in the same workspace and publishes live state
+and callbacks only after durable storage commit. Successful stored/default
+loads and resets notify the final layout value; failed direct loads and resets
+do not notify or mutate live state.
 
 The schema changed from version 1 to version 2. Version 1 records from 0.1.0
 are rejected, causing `begin()` to perform its one-time startup fallback to

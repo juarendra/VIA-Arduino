@@ -71,6 +71,14 @@ defaults before a reset is made durable. The core cannot inspect state owned by
 a `CustomValue` handler, so the caller must keep that active state outside the
 workspace as required by the [porting contract](docs/PORTING.md).
 
+Before publishing loaded custom state, or erasing storage for a factory reset,
+the core calls `CustomValue::validateState()` on the staged bytes. Its default
+accepts exactly `stateSize()` bytes. A handler that can reject persisted state
+must override this method without mutating active state; `false` blocks the
+operation, while `true` guarantees that `loadState()` for the same bytes
+succeeds and publishes them. `loadState()` must remain non-mutating when it
+returns `false`.
+
 ```cpp
 uint8_t macros[64];
 uint8_t storageBytes[128];
@@ -137,8 +145,10 @@ Derive from `via::Callbacks` only for application hooks you need:
 
 Unsupported commands and invalid gated operations return `0xFF` in byte 0.
 An enabled factory reset publishes defaults and invokes state callbacks only
-after storage erase, replacement writes, and commit all succeed. Earlier
-failures leave live protocol and custom state unchanged.
+after storage erase, replacement writes, and commit all succeed. Custom-state
+validation rejection happens before erase and leaves storage, dirty state, live
+protocol and custom state, and callbacks unchanged. Later storage failures also
+leave live and dirty state and callbacks unchanged.
 
 ## Installation
 

@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Added
+
+- `CustomValue::validateState()` provides non-mutating validation before staged
+  custom state is published or factory-reset storage is changed.
+
+### Migration
+
+- Custom-value handlers that can reject persisted bytes must move that decision
+  into a `const`, non-mutating `validateState()` override. Returning `true`
+  guarantees the following `loadState()` for those bytes succeeds and publishes
+  them; returning `false` from `loadState()` must still leave active state
+  unchanged. Handlers needing only exact `stateSize()` validation can use the
+  default implementation unchanged.
+
 ## 0.2.0 - 2026-08-01
 
 ### Added

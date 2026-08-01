@@ -101,15 +101,26 @@ implementation; the caller must keep that state outside this workspace. The
 implementation must also leave active state unchanged when `loadState()`
 returns false. Configurations without `Storage` do not need a load workspace.
 
+`CustomValue::validateState(const uint8_t*, size_t) const` checks staged custom
+bytes without mutating active state. The default accepts exactly `stateSize()`
+bytes. A custom handler that can reject persisted or reset state must migrate
+that decision from `loadState()` into `validateState()`: `false` blocks the
+operation, and `true` guarantees a subsequent `loadState()` for the same bytes
+succeeds and publishes them. Handlers that only require exact-length validation
+need no override.
+
 `MemoryStorage` is only a test backend; it intentionally does not survive a
 power cycle.
 
-Factory reset stages the complete default payload in this workspace, then calls
-`erase()`, writes the replacement record, and calls `commit()`. Live keymap,
-encoder, macro, layout, and custom state plus callbacks are published only after
-that commit succeeds. An adapter that promises atomic commits must keep erase
-and write effects provisional until `commit()` selects the replacement record;
-the bundled EEPROM adapter does not promise power-loss atomicity.
+Factory reset stages the complete default payload in this workspace, validates
+custom reset bytes before `erase()`, writes the replacement record, and calls
+`commit()`. Validation rejection leaves storage, live and dirty state, and
+callbacks untouched. Live keymap, encoder, macro, layout, and custom state plus
+callbacks are published only after commit succeeds; the validated custom
+`loadState()` publication is contractually non-fallible at that point. An
+adapter that promises atomic commits must keep erase and write effects
+provisional until `commit()` selects the replacement record; the bundled EEPROM
+adapter does not promise power-loss atomicity.
 
 ## 4. Configure protocol state and callbacks
 

@@ -6,7 +6,7 @@ namespace via {
 namespace {
 
 constexpr uint32_t kStateMagic = 0x56494141UL;  // "VIAA"
-constexpr uint16_t kStateVersion = 1;
+constexpr uint16_t kStateVersion = 2;
 
 struct __attribute__((packed)) StateHeader {
   uint32_t magic;
@@ -33,12 +33,15 @@ Protocol::Protocol(const Config& config, Transport& transport, Storage* storage,
       customValue_(customValue),
       callbacks_(callbacks),
       dirty_(false),
-      saveAt_(0) {}
+      saveAt_(0),
+      layoutOptions_(config.defaultLayoutOptions) {}
 
 bool Protocol::begin(uint32_t nowMs) {
   if (config_.rows == 0 || config_.columns == 0 || config_.layers == 0 ||
       config_.keymap == nullptr || config_.defaultKeymap == nullptr ||
-      (config_.macroBytes != 0 && config_.macros == nullptr)) {
+      (config_.macroBytes != 0 && config_.macros == nullptr) ||
+      (config_.encoderCount != 0 &&
+       (config_.encoderMap == nullptr || config_.defaultEncoderMap == nullptr))) {
     return false;
   }
   if (!load()) resetBuffers();
@@ -70,8 +73,11 @@ bool Protocol::process(uint8_t packet[kPacketSize], uint32_t nowMs) {
           packet[4] = static_cast<uint8_t>(nowMs >> 8);
           packet[5] = static_cast<uint8_t>(nowMs);
           break;
-        case 0x02:  // fixed layout options
-          packet[2] = packet[3] = packet[4] = packet[5] = 0;
+        case 0x02:  // layout options
+          packet[2] = static_cast<uint8_t>(layoutOptions_ >> 24);
+          packet[3] = static_cast<uint8_t>(layoutOptions_ >> 16);
+          packet[4] = static_cast<uint8_t>(layoutOptions_ >> 8);
+          packet[5] = static_cast<uint8_t>(layoutOptions_);
           break;
         case 0x03: { // switch matrix state
           const uint8_t bytesPerRow = (config_.columns + 7) / 8;
@@ -111,8 +117,14 @@ bool Protocol::process(uint8_t packet[kPacketSize], uint32_t nowMs) {
       break;
     case 0x03:  // set keyboard value
       if (packet[1] == 0x05) {
-        if (callbacks_) callbacks_->deviceIndication(true);
-      } else if (packet[1] != 0x02) {
+        if (callbacks_) callbacks_->deviceIndication(packet[2]);
+      } else if (packet[1] == 0x02) {
+        layoutOptions_ = (static_cast<uint32_t>(packet[2]) << 24) |
+                         (static_cast<uint32_t>(packet[3]) << 16) |
+                         (static_cast<uint32_t>(packet[4]) << 8) | packet[5];
+        markDirty(nowMs);
+        if (callbacks_) callbacks_->layoutOptionsChanged(layoutOptions_);
+      } else {
         packet[0] = 0xFF;
       }
       break;
@@ -132,6 +144,9 @@ bool Protocol::process(uint8_t packet[kPacketSize], uint32_t nowMs) {
       break;
     case 0x06:  // dynamic keymap reset
       memcpy(config_.keymap, config_.defaultKeymap, keymapBytes());
+      if (encoderMapBytes()) {
+        memcpy(config_.encoderMap, config_.defaultEncoderMap, encoderMapBytes());
+      }
       markDirty(nowMs);
       break;
     case 0x07:  // set custom value
@@ -191,6 +206,25 @@ bool Protocol::process(uint8_t packet[kPacketSize], uint32_t nowMs) {
       writeDynamicKeymap(offset, packet[3] > 28 ? 28 : packet[3], &packet[4], nowMs);
       break;
     }
+    case 0x14: {  // dynamic keymap get encoder
+      if (packet[1] >= config_.layers || packet[2] >= config_.encoderCount ||
+          packet[3] > 1) {
+        packet[0] = 0xFF;
+        break;
+      }
+      const uint16_t code = encoderKeycode(packet[1], packet[2], packet[3]);
+      packet[4] = static_cast<uint8_t>(code >> 8);
+      packet[5] = static_cast<uint8_t>(code);
+      break;
+    }
+    case 0x15:  // dynamic keymap set encoder
+      if (!setEncoderKeycode(packet[1], packet[2], packet[3],
+                             static_cast<uint16_t>(packet[4] << 8 | packet[5]))) {
+        packet[0] = 0xFF;
+      } else {
+        markDirty(nowMs);
+      }
+      break;
     default:
       packet[0] = 0xFF;
   }
@@ -210,9 +244,28 @@ bool Protocol::setKeycode(uint8_t layer, uint8_t row, uint8_t column, uint16_t v
   return true;
 }
 
+uint16_t Protocol::encoderKeycode(uint8_t layer, uint8_t encoder,
+                                  uint8_t clockwise) const {
+  if (layer >= config_.layers || encoder >= config_.encoderCount || clockwise > 1) return 0;
+  return config_.encoderMap[(static_cast<size_t>(layer) * config_.encoderCount + encoder) * 2 +
+                            clockwise];
+}
+
+bool Protocol::setEncoderKeycode(uint8_t layer, uint8_t encoder,
+                                 uint8_t clockwise, uint16_t value) {
+  if (layer >= config_.layers || encoder >= config_.encoderCount || clockwise > 1) return false;
+  config_.encoderMap[(static_cast<size_t>(layer) * config_.encoderCount + encoder) * 2 +
+                     clockwise] = value;
+  return true;
+}
+
 void Protocol::resetBuffers() {
   memcpy(config_.keymap, config_.defaultKeymap, keymapBytes());
+  if (encoderMapBytes()) {
+    memcpy(config_.encoderMap, config_.defaultEncoderMap, encoderMapBytes());
+  }
   if (config_.macroBytes) memset(config_.macros, 0, config_.macroBytes);
+  layoutOptions_ = config_.defaultLayoutOptions;
 }
 
 void Protocol::markDirty(uint32_t nowMs) {
@@ -227,16 +280,26 @@ size_t Protocol::keyCount() const {
 
 size_t Protocol::keymapBytes() const { return keyCount() * sizeof(uint16_t); }
 
+size_t Protocol::encoderMapBytes() const {
+  return static_cast<size_t>(config_.layers) * config_.encoderCount * 2 * sizeof(uint16_t);
+}
+
 size_t Protocol::stateBytes() const {
-  return keymapBytes() + config_.macroBytes +
-         (customValue_ ? customValue_->stateSize() : 0);
+  return keymapBytes() + encoderMapBytes() + config_.macroBytes + sizeof(layoutOptions_) +
+          (customValue_ ? customValue_->stateSize() : 0);
 }
 
 uint32_t Protocol::stateCrc() const {
   uint32_t crc = 0xFFFFFFFFUL;
   const uint8_t* keymap = reinterpret_cast<const uint8_t*>(config_.keymap);
   for (size_t i = 0; i < keymapBytes(); ++i) crc = crc32Update(crc, keymap[i]);
+  const uint8_t* encoderMap = reinterpret_cast<const uint8_t*>(config_.encoderMap);
+  for (size_t i = 0; i < encoderMapBytes(); ++i) crc = crc32Update(crc, encoderMap[i]);
   for (uint16_t i = 0; i < config_.macroBytes; ++i) crc = crc32Update(crc, config_.macros[i]);
+  const uint8_t* layoutOptions = reinterpret_cast<const uint8_t*>(&layoutOptions_);
+  for (size_t i = 0; i < sizeof(layoutOptions_); ++i) {
+    crc = crc32Update(crc, layoutOptions[i]);
+  }
   if (customValue_) {
     uint8_t state[16];
     const size_t size = customValue_->stateSize();
@@ -255,8 +318,15 @@ bool Protocol::load() {
   size_t offset = sizeof(header);
   if (!storage_->read(offset, reinterpret_cast<uint8_t*>(config_.keymap), keymapBytes())) return false;
   offset += keymapBytes();
+  if (encoderMapBytes() &&
+      !storage_->read(offset, reinterpret_cast<uint8_t*>(config_.encoderMap),
+                      encoderMapBytes())) return false;
+  offset += encoderMapBytes();
   if (config_.macroBytes && !storage_->read(offset, config_.macros, config_.macroBytes)) return false;
   offset += config_.macroBytes;
+  if (!storage_->read(offset, reinterpret_cast<uint8_t*>(&layoutOptions_),
+                      sizeof(layoutOptions_))) return false;
+  offset += sizeof(layoutOptions_);
   uint8_t customState[16];
   size_t customSize = 0;
   if (customValue_ && customValue_->stateSize()) {
@@ -267,7 +337,13 @@ bool Protocol::load() {
   uint32_t crc = 0xFFFFFFFFUL;
   const uint8_t* keymap = reinterpret_cast<const uint8_t*>(config_.keymap);
   for (size_t i = 0; i < keymapBytes(); ++i) crc = crc32Update(crc, keymap[i]);
+  const uint8_t* encoderMap = reinterpret_cast<const uint8_t*>(config_.encoderMap);
+  for (size_t i = 0; i < encoderMapBytes(); ++i) crc = crc32Update(crc, encoderMap[i]);
   for (uint16_t i = 0; i < config_.macroBytes; ++i) crc = crc32Update(crc, config_.macros[i]);
+  const uint8_t* layoutOptions = reinterpret_cast<const uint8_t*>(&layoutOptions_);
+  for (size_t i = 0; i < sizeof(layoutOptions_); ++i) {
+    crc = crc32Update(crc, layoutOptions[i]);
+  }
   for (size_t i = 0; i < customSize; ++i) crc = crc32Update(crc, customState[i]);
   if (~crc != header.crc) return false;
   return !customSize || customValue_->loadState(customState, customSize);
@@ -286,8 +362,15 @@ bool Protocol::writeState() {
   size_t offset = sizeof(header);
   if (!storage_->write(offset, reinterpret_cast<const uint8_t*>(config_.keymap), keymapBytes())) return false;
   offset += keymapBytes();
+  if (encoderMapBytes() &&
+      !storage_->write(offset, reinterpret_cast<const uint8_t*>(config_.encoderMap),
+                       encoderMapBytes())) return false;
+  offset += encoderMapBytes();
   if (config_.macroBytes && !storage_->write(offset, config_.macros, config_.macroBytes)) return false;
   offset += config_.macroBytes;
+  if (!storage_->write(offset, reinterpret_cast<const uint8_t*>(&layoutOptions_),
+                       sizeof(layoutOptions_))) return false;
+  offset += sizeof(layoutOptions_);
   if (customValue_ && customValue_->stateSize()) {
     uint8_t state[16];
     const size_t size = customValue_->stateSize();

@@ -45,12 +45,36 @@ class Callbacks {
  public:
   virtual ~Callbacks() {}
   virtual uint32_t matrixRow(uint8_t row) const { (void)row; return 0; }
-  virtual void deviceIndication(bool enabled) { (void)enabled; }
+  virtual void deviceIndication(uint8_t value) { (void)value; }
+  virtual void layoutOptionsChanged(uint32_t value) { (void)value; }
   virtual void changed() {}
   virtual void bootloaderJump() {}
 };
 
 struct Config {
+  Config(uint8_t rowsValue = 0, uint8_t columnsValue = 0,
+         uint8_t layersValue = 0, uint16_t* keymapValue = nullptr,
+         const uint16_t* defaultKeymapValue = nullptr,
+         uint8_t* macrosValue = nullptr, uint16_t macroBytesValue = 0,
+         uint8_t macroCountValue = 0, uint32_t firmwareVersionValue = 0,
+         uint32_t autoSaveMsValue = 0, uint32_t defaultLayoutOptionsValue = 0,
+         uint8_t encoderCountValue = 0, uint16_t* encoderMapValue = nullptr,
+         const uint16_t* defaultEncoderMapValue = nullptr)
+      : rows(rowsValue),
+        columns(columnsValue),
+        layers(layersValue),
+        keymap(keymapValue),
+        defaultKeymap(defaultKeymapValue),
+        macros(macrosValue),
+        macroBytes(macroBytesValue),
+        macroCount(macroCountValue),
+        firmwareVersion(firmwareVersionValue),
+        autoSaveMs(autoSaveMsValue),
+        defaultLayoutOptions(defaultLayoutOptionsValue),
+        encoderCount(encoderCountValue),
+        encoderMap(encoderMapValue),
+        defaultEncoderMap(defaultEncoderMapValue) {}
+
   uint8_t rows;
   uint8_t columns;
   uint8_t layers;
@@ -61,6 +85,10 @@ struct Config {
   uint8_t macroCount;
   uint32_t firmwareVersion;
   uint32_t autoSaveMs;
+  uint32_t defaultLayoutOptions;
+  uint8_t encoderCount;
+  uint16_t* encoderMap;
+  const uint16_t* defaultEncoderMap;
 };
 
 class Protocol {
@@ -78,12 +106,17 @@ class Protocol {
   bool dirty() const { return dirty_; }
   uint16_t keycode(uint8_t layer, uint8_t row, uint8_t column) const;
   bool setKeycode(uint8_t layer, uint8_t row, uint8_t column, uint16_t value);
+  uint32_t layoutOptions() const { return layoutOptions_; }
+  uint16_t encoderKeycode(uint8_t layer, uint8_t encoder, uint8_t clockwise) const;
+  bool setEncoderKeycode(uint8_t layer, uint8_t encoder, uint8_t clockwise,
+                         uint16_t value);
 
  private:
   void resetBuffers();
   void markDirty(uint32_t nowMs);
   size_t keyCount() const;
   size_t keymapBytes() const;
+  size_t encoderMapBytes() const;
   size_t stateBytes() const;
   uint32_t stateCrc() const;
   bool readState();
@@ -99,6 +132,7 @@ class Protocol {
   Callbacks* callbacks_;
   bool dirty_;
   uint32_t saveAt_;
+  uint32_t layoutOptions_;
 };
 
 }  // namespace via

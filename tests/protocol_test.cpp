@@ -140,6 +140,39 @@ class RecordingStorage : public via::Storage {
   uint8_t bytes[64];
 };
 
+class ResetFailureStorage : public via::Storage {
+ public:
+  enum Failure { kNone, kCapacity, kErase, kWrite, kCommit };
+
+  ResetFailureStorage()
+      : failure(kNone), writes(0), commits(0), erases(0) {}
+
+  size_t capacity() const override {
+    return failure == kCapacity ? 0 : sizeof(bytes);
+  }
+  bool read(size_t, uint8_t*, size_t) override { return false; }
+  bool write(size_t offset, const uint8_t*, size_t length) override {
+    ++writes;
+    return failure != kWrite && offset <= sizeof(bytes) &&
+           length <= sizeof(bytes) - offset;
+  }
+  bool commit() override {
+    ++commits;
+    return failure != kCommit;
+  }
+  bool erase() override {
+    ++erases;
+    return failure != kErase;
+  }
+  void resetCounts() { writes = commits = erases = 0; }
+
+  Failure failure;
+  uint8_t writes;
+  uint8_t commits;
+  uint8_t erases;
+  uint8_t bytes[64];
+};
+
 class FailingReadStorage : public via::Storage {
  public:
   FailingReadStorage(uint8_t* buffer, size_t length)
@@ -488,8 +521,12 @@ void assertLoadBufferAliasesRejectedBeforeStorageAccess() {
   uint8_t macros[4];
   via::MemoryTransport transport;
   RecordingStorage storage;
-  uint8_t* aliases[] = {reinterpret_cast<uint8_t*>(keymap),
-                        reinterpret_cast<uint8_t*>(encoderMap), macros};
+  uint8_t* aliases[] = {
+      reinterpret_cast<uint8_t*>(keymap),
+      const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(defaults)),
+      reinterpret_cast<uint8_t*>(encoderMap),
+      const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(defaultEncoderMap)),
+      macros};
 
   for (uint8_t i = 0; i < sizeof(aliases) / sizeof(aliases[0]); ++i) {
     keymap[0] = 0xA001;
@@ -515,6 +552,268 @@ void assertLoadBufferAliasesRejectedBeforeStorageAccess() {
     assert(encoderMap[0] == 0xB001 && encoderMap[1] == 0xB002);
     assert(macros[0] == 0xC1 && macros[3] == 0xC1);
   }
+}
+
+void assertHighPacketBytesRemainUnsigned() {
+  static uint16_t keymap[145 * 113];
+  static const uint16_t defaults[145 * 113] = {};
+  uint16_t encoderMap[2] = {};
+  const uint16_t defaultEncoderMap[2] = {};
+  via::MemoryTransport transport;
+  via::Config config = {145, 113, 1, keymap, defaults, nullptr, 0,
+                        0, 0, 0, 0, 1, encoderMap, defaultEncoderMap};
+  via::Protocol keyboard(config, transport);
+  assert(keyboard.begin(0));
+
+  uint8_t packet[via::kPacketSize] = {0x05, 0, 0, 0, 0x80, 0xFF};
+  assert(keyboard.process(packet, 0));
+  assert(keymap[0] == 0x80FF);
+
+  memset(packet, 0, sizeof(packet));
+  packet[0] = 0x15;
+  packet[3] = 1;
+  packet[4] = 0xFE;
+  packet[5] = 0x01;
+  assert(keyboard.process(packet, 0));
+  assert(encoderMap[1] == 0xFE01);
+
+  memset(packet, 0, sizeof(packet));
+  packet[0] = 0x13;
+  packet[1] = 0x80;
+  packet[3] = 2;
+  packet[4] = 0xFC;
+  packet[5] = 0xDE;
+  assert(keyboard.process(packet, 0));
+  assert(keymap[0x4000] == 0xFCDE);
+  packet[0] = 0x12;
+  packet[4] = packet[5] = 0;
+  assert(keyboard.process(packet, 0));
+  assert(packet[4] == 0xFC && packet[5] == 0xDE);
+
+  static uint8_t macros[0x8002];
+  uint16_t macroKeymap[1] = {};
+  const uint16_t macroDefaults[1] = {};
+  via::MemoryTransport macroTransport;
+  via::Config macroConfig = {1, 1, 1, macroKeymap, macroDefaults, macros,
+                             sizeof(macros)};
+  via::Protocol macroKeyboard(macroConfig, macroTransport);
+  assert(macroKeyboard.begin(0));
+  memset(packet, 0, sizeof(packet));
+  packet[0] = 0x0F;
+  packet[1] = 0x80;
+  packet[3] = 2;
+  packet[4] = 0xA1;
+  packet[5] = 0xA2;
+  assert(macroKeyboard.process(packet, 0));
+  assert(macros[0x8000] == 0xA1 && macros[0x8001] == 0xA2);
+  packet[0] = 0x0E;
+  packet[4] = packet[5] = 0;
+  assert(macroKeyboard.process(packet, 0));
+  assert(packet[4] == 0xA1 && packet[5] == 0xA2);
+}
+
+void assertLayoutLifecycleNotifications() {
+  uint8_t storageBytes[32];
+  uint8_t loadBuffer[6];
+  const uint16_t defaults[1] = {0x1001};
+  uint16_t savedKeymap[1] = {};
+  via::MemoryTransport savedTransport;
+  via::MemoryStorage storage(storageBytes, sizeof(storageBytes));
+  via::Config savedConfig = {1, 1, 1, savedKeymap, defaults};
+  savedConfig.defaultLayoutOptions = 0x11223344UL;
+  savedConfig.loadBuffer = loadBuffer;
+  savedConfig.loadBufferBytes = sizeof(loadBuffer);
+  via::Protocol saved(savedConfig, savedTransport, &storage);
+  assert(saved.begin(0));
+  uint8_t packet[via::kPacketSize] = {0x03, 0x02, 0xA1, 0xB2, 0xC3, 0xD4};
+  assert(saved.process(packet, 0));
+  assert(saved.save());
+
+  uint16_t begunKeymap[1] = {};
+  via::MemoryTransport begunTransport;
+  RecordingCallbacks begunCallbacks;
+  via::Config begunConfig = {1, 1, 1, begunKeymap, defaults};
+  begunConfig.loadBuffer = loadBuffer;
+  begunConfig.loadBufferBytes = sizeof(loadBuffer);
+  via::Protocol begun(begunConfig, begunTransport, &storage, nullptr,
+                      &begunCallbacks);
+  assert(begun.begin(0));
+  assert(begunCallbacks.layoutCalls == 1);
+  assert(begunCallbacks.layoutValue == 0xA1B2C3D4UL);
+
+  uint16_t loadedKeymap[1] = {};
+  via::MemoryTransport loadedTransport;
+  RecordingCallbacks loadedCallbacks;
+  via::Config loadedConfig = {1, 1, 1, loadedKeymap, defaults};
+  loadedConfig.loadBuffer = loadBuffer;
+  loadedConfig.loadBufferBytes = sizeof(loadBuffer);
+  via::Protocol loaded(loadedConfig, loadedTransport, &storage, nullptr,
+                       &loadedCallbacks);
+  assert(loaded.load());
+  assert(loadedCallbacks.layoutCalls == 1);
+  assert(loadedCallbacks.layoutValue == 0xA1B2C3D4UL);
+
+  storageBytes[12] ^= 1;
+  RecordingCallbacks failedCallbacks;
+  via::Protocol failed(loadedConfig, loadedTransport, &storage, nullptr,
+                       &failedCallbacks);
+  assert(!failed.load());
+  assert(failedCallbacks.layoutCalls == 0);
+
+  uint8_t fallbackBytes[32];
+  via::MemoryStorage fallbackStorage(fallbackBytes, sizeof(fallbackBytes));
+  RecordingCallbacks fallbackCallbacks;
+  loadedConfig.defaultLayoutOptions = 0x55667788UL;
+  via::Protocol fallback(loadedConfig, loadedTransport, &fallbackStorage,
+                         nullptr, &fallbackCallbacks);
+  assert(fallback.begin(0));
+  assert(fallbackCallbacks.layoutCalls == 1);
+  assert(fallbackCallbacks.layoutValue == 0x55667788UL);
+}
+
+void setNonDefaultResetState(via::Protocol& keyboard, uint16_t* encoderMap,
+                             uint8_t* macros, StoredCustomValue& customValue) {
+  assert(keyboard.setKeycode(0, 0, 0, 0xA001));
+  assert(keyboard.setEncoderKeycode(0, 0, 0, 0xB001));
+  assert(keyboard.setEncoderKeycode(0, 0, 1, 0xB002));
+  assert(encoderMap[0] == 0xB001 && encoderMap[1] == 0xB002);
+  macros[0] = 0xC1;
+  macros[1] = 0xC2;
+  customValue.value = 0xD1;
+  uint8_t packet[via::kPacketSize] = {0x03, 0x02, 0xE0, 0x01, 0x02, 0x03};
+  assert(keyboard.process(packet, 0));
+}
+
+void assertResetStateUnchanged(const via::Protocol& keyboard,
+                               const uint16_t* keymap,
+                               const uint16_t* encoderMap,
+                               const uint8_t* macros,
+                               const StoredCustomValue& customValue) {
+  assert(keymap[0] == 0xA001);
+  assert(encoderMap[0] == 0xB001 && encoderMap[1] == 0xB002);
+  assert(macros[0] == 0xC1 && macros[1] == 0xC2);
+  assert(keyboard.layoutOptions() == 0xE0010203UL);
+  assert(customValue.value == 0xD1);
+}
+
+void assertFailedFactoryResetIsTransactional() {
+  const ResetFailureStorage::Failure failures[] = {
+      ResetFailureStorage::kCapacity, ResetFailureStorage::kErase,
+      ResetFailureStorage::kWrite, ResetFailureStorage::kCommit};
+  const uint16_t defaults[1] = {0x1001};
+  const uint16_t defaultEncoderMap[2] = {0x2001, 0x2002};
+
+  for (uint8_t i = 0; i < sizeof(failures) / sizeof(failures[0]); ++i) {
+    uint16_t keymap[1] = {};
+    uint16_t encoderMap[2] = {};
+    uint8_t macros[2] = {};
+    uint8_t loadBuffer[13];
+    via::MemoryTransport transport;
+    ResetFailureStorage storage;
+    StoredCustomValue customValue(0x41);
+    RecordingCallbacks callbacks;
+    via::Config config = {1, 1, 1, keymap, defaults, macros, sizeof(macros),
+                          1, 0, 0, 0x30010203UL, 1, encoderMap,
+                          defaultEncoderMap};
+    config.loadBuffer = loadBuffer;
+    config.loadBufferBytes = sizeof(loadBuffer);
+    via::Protocol keyboard(config, transport, &storage, &customValue,
+                           &callbacks);
+    assert(keyboard.begin(0));
+    setNonDefaultResetState(keyboard, encoderMap, macros, customValue);
+    assert(keyboard.save());
+    assert(!keyboard.dirty());
+    storage.resetCounts();
+    storage.failure = failures[i];
+    const uint8_t layoutCalls = callbacks.layoutCalls;
+    const uint8_t changeCalls = callbacks.changeCalls;
+    const uint8_t customLoads = customValue.loadCalls;
+
+    assert(!keyboard.factoryReset());
+    assertResetStateUnchanged(keyboard, keymap, encoderMap, macros, customValue);
+    assert(!keyboard.dirty());
+    assert(callbacks.layoutCalls == layoutCalls);
+    assert(callbacks.changeCalls == changeCalls);
+    assert(customValue.loadCalls == customLoads);
+    if (failures[i] == ResetFailureStorage::kCapacity) {
+      assert(storage.erases == 0 && storage.writes == 0 && storage.commits == 0);
+    } else if (failures[i] == ResetFailureStorage::kErase) {
+      assert(storage.erases == 1 && storage.writes == 0 && storage.commits == 0);
+    } else {
+      assert(storage.erases == 1 && storage.writes > 0);
+    }
+  }
+
+  for (uint8_t mode = 0; mode < 2; ++mode) {
+    uint16_t keymap[1] = {};
+    uint16_t encoderMap[2] = {};
+    uint8_t macros[2] = {};
+    uint8_t loadBuffer[13];
+    via::MemoryTransport transport;
+    ResetFailureStorage storage;
+    StoredCustomValue customValue(0x41);
+    RecordingCallbacks callbacks;
+    via::Config config = {1, 1, 1, keymap, defaults, macros, sizeof(macros),
+                          1, 0, 0, 0x30010203UL, 1, encoderMap,
+                          defaultEncoderMap};
+    config.loadBuffer = mode == 0 ? loadBuffer : nullptr;
+    config.loadBufferBytes = mode == 0 ? sizeof(loadBuffer) : 0;
+    via::Protocol keyboard(config, transport, mode == 0 ? nullptr : &storage,
+                           &customValue, &callbacks);
+    assert(mode != 0 || keyboard.begin(0));
+    setNonDefaultResetState(keyboard, encoderMap, macros, customValue);
+    const bool dirty = keyboard.dirty();
+    const uint8_t layoutCalls = callbacks.layoutCalls;
+    const uint8_t changeCalls = callbacks.changeCalls;
+    const uint8_t customLoads = customValue.loadCalls;
+
+    assert(!keyboard.factoryReset());
+    assertResetStateUnchanged(keyboard, keymap, encoderMap, macros, customValue);
+    assert(keyboard.dirty() == dirty);
+    assert(callbacks.layoutCalls == layoutCalls);
+    assert(callbacks.changeCalls == changeCalls);
+    assert(customValue.loadCalls == customLoads);
+    assert(storage.erases == 0 && storage.writes == 0 && storage.commits == 0);
+  }
+}
+
+void assertSuccessfulFactoryResetPublishesOnce() {
+  uint16_t keymap[1] = {};
+  const uint16_t defaults[1] = {0x1001};
+  uint16_t encoderMap[2] = {};
+  const uint16_t defaultEncoderMap[2] = {0x2001, 0x2002};
+  uint8_t macros[2] = {};
+  uint8_t loadBuffer[13];
+  via::MemoryTransport transport;
+  ResetFailureStorage storage;
+  StoredCustomValue customValue(0x41);
+  RecordingCallbacks callbacks;
+  via::Config config = {1, 1, 1, keymap, defaults, macros, sizeof(macros),
+                        1, 0, 0, 0x30010203UL, 1, encoderMap,
+                        defaultEncoderMap};
+  config.loadBuffer = loadBuffer;
+  config.loadBufferBytes = sizeof(loadBuffer);
+  via::Protocol keyboard(config, transport, &storage, &customValue, &callbacks);
+  assert(keyboard.begin(0));
+  setNonDefaultResetState(keyboard, encoderMap, macros, customValue);
+  const uint8_t layoutCalls = callbacks.layoutCalls;
+  const uint8_t changeCalls = callbacks.changeCalls;
+  const uint8_t customLoads = customValue.loadCalls;
+  storage.resetCounts();
+
+  assert(keyboard.factoryReset());
+  assert(keymap[0] == defaults[0]);
+  assert(memcmp(encoderMap, defaultEncoderMap, sizeof(encoderMap)) == 0);
+  const uint8_t clearedMacros[2] = {};
+  assert(memcmp(macros, clearedMacros, sizeof(macros)) == 0);
+  assert(keyboard.layoutOptions() == 0x30010203UL);
+  assert(customValue.value == 0);
+  assert(customValue.loadCalls == customLoads + 1);
+  assert(!keyboard.dirty());
+  assert(callbacks.layoutCalls == layoutCalls + 1);
+  assert(callbacks.layoutValue == 0x30010203UL);
+  assert(callbacks.changeCalls == changeCalls + 1);
+  assert(storage.erases == 1 && storage.commits == 1);
 }
 
 void assertRequiredLoadBufferSizeAndMigrationGuards() {
@@ -949,11 +1248,15 @@ int main() {
   assertOversizedPayloadRejectedBeforeStorageAccess();
   assertCorruptLoadDoesNotMutateActiveState();
   assertOversizedRecordRejectedBeforeStorageAccess();
+  assertHighPacketBytesRemainUnsigned();
+  assertFailedFactoryResetIsTransactional();
+  assertLayoutLifecycleNotifications();
   assertLoadBufferAliasesRejectedBeforeStorageAccess();
   assertRequiredLoadBufferSizeAndMigrationGuards();
   assertTenFieldConfigWithoutStorageBegins();
   assertCustomLoadRejectionDoesNotMutateActiveState();
   assertSecondPassFailureDoesNotMutateActiveState();
+  assertSuccessfulFactoryResetPublishesOnce();
   assertBulkBoundsAndEmptyWrites();
   assertCustomStateSerializedOncePerSave();
   assertRGBLightSaveChannel();
@@ -1005,7 +1308,7 @@ int main() {
   packet[5] = 0x78;
   assert(keyboard.process(packet, 20));
   assert(keyboard.layoutOptions() == 0x12345678UL);
-  assert(callbacks.layoutCalls == 1);
+  assert(callbacks.layoutCalls == 2);
   assert(callbacks.layoutValue == 0x12345678UL);
 
   memset(packet, 0, sizeof(packet));
@@ -1083,6 +1386,8 @@ int main() {
   assert(restoredKeyboard.layoutOptions() == 0x12345678UL);
   assert(restoredKeyboard.encoderKeycode(1, 0, 1) == 0xBEEF);
   assert(memcmp(restoredMacros, "via", 3) == 0);
+  uint8_t macrosBeforeKeymapReset[sizeof(restoredMacros)];
+  memcpy(macrosBeforeKeymapReset, restoredMacros, sizeof(restoredMacros));
 
   assert(restoredKeyboard.setKeycode(0, 0, 0, 0x5678));
   memset(packet, 0, sizeof(packet));
@@ -1091,13 +1396,16 @@ int main() {
   assert(restoredKeyboard.keycode(0, 0, 0) == defaults[0]);
   assert(memcmp(restoredEncoderMap, defaultEncoderMap,
                 sizeof(restoredEncoderMap)) == 0);
-  assert(restoredMacros[0] == 'v');
+  assert(memcmp(restoredMacros, macrosBeforeKeymapReset,
+                sizeof(restoredMacros)) == 0);
 
   assert(restoredKeyboard.setKeycode(0, 0, 0, 0x5678));
+  memset(restoredMacros, 0xA5, sizeof(restoredMacros));
   memset(packet, 0, sizeof(packet));
   packet[0] = 0x10;
   assert(restoredKeyboard.process(packet, 31));
-  assert(restoredMacros[0] == 0);
+  const uint8_t clearedMacros[sizeof(restoredMacros)] = {};
+  assert(memcmp(restoredMacros, clearedMacros, sizeof(restoredMacros)) == 0);
   assert(restoredKeyboard.keycode(0, 0, 0) == 0x5678);
   return 0;
 }

@@ -289,18 +289,19 @@ class ResetFailureStorage : public via::Storage {
   uint8_t bytes[64];
 };
 
-class FailingReadStorage : public via::Storage {
+class ChangingReadStorage : public via::Storage {
  public:
-  FailingReadStorage(uint8_t* buffer, size_t length)
-      : buffer_(buffer), length_(length), reads_(0), failRead_(0) {
+  ChangingReadStorage(uint8_t* buffer, size_t length)
+      : buffer_(buffer), length_(length), payloadReads_(0), changeReads_(false) {
     memset(buffer_, 0xFF, length_);
   }
 
   size_t capacity() const override { return length_; }
   bool read(size_t offset, uint8_t* output, size_t length) override {
-    ++reads_;
-    if (reads_ == failRead_ || offset > length_ || length > length_ - offset) {
-      return false;
+    if (offset > length_ || length > length_ - offset) return false;
+    if (offset != 0 && ++payloadReads_ > 1 && changeReads_) {
+      memset(output, 0xEE, length);
+      return true;
     }
     memcpy(output, buffer_ + offset, length);
     return true;
@@ -315,16 +316,17 @@ class FailingReadStorage : public via::Storage {
     memset(buffer_, 0xFF, length_);
     return true;
   }
-  void failRead(uint8_t call) {
-    reads_ = 0;
-    failRead_ = call;
+  void changeRepeatedPayloadReads() {
+    payloadReads_ = 0;
+    changeReads_ = true;
   }
+  uint8_t payloadReads() const { return payloadReads_; }
 
  private:
   uint8_t* buffer_;
   size_t length_;
-  uint8_t reads_;
-  uint8_t failRead_;
+  uint8_t payloadReads_;
+  bool changeReads_;
 };
 
 class ChannelSevenCustomValue : public via::CustomValue {
@@ -1033,7 +1035,7 @@ void assertCorruptLoadDoesNotMutateActiveState() {
   }
 }
 
-void assertSecondPassFailureDoesNotMutateActiveState() {
+void assertLoadValidatesExactlyPublishedBytes() {
   uint16_t keymap[2] = {0x1001, 0x1002};
   const uint16_t defaults[2] = {0x1001, 0x1002};
   uint16_t encoderMap[2] = {0x2001, 0x2002};
@@ -1042,7 +1044,7 @@ void assertSecondPassFailureDoesNotMutateActiveState() {
   uint8_t storageBytes[64];
   uint8_t loadBuffer[15];
   via::MemoryTransport transport;
-  FailingReadStorage storage(storageBytes, sizeof(storageBytes));
+  ChangingReadStorage storage(storageBytes, sizeof(storageBytes));
   StoredCustomValue customValue(0x41);
   via::Config config = {1, 2, 1, keymap, defaults, macros, sizeof(macros), 1, 0, 0,
                         0x30010203UL, 1, encoderMap, defaultEncoderMap};
@@ -1061,15 +1063,48 @@ void assertSecondPassFailureDoesNotMutateActiveState() {
   customValue.value = 0xD1;
   uint8_t packet[via::kPacketSize] = {0x03, 0x02, 0xE0, 0x01, 0x02, 0x03};
   assert(keyboard.process(packet, 0));
-  storage.failRead(4);
+  storage.changeRepeatedPayloadReads();
 
+  assert(keyboard.load());
+  assert(storage.payloadReads() == 1);
+  assert(keymap[0] == 0x1001 && keymap[1] == 0x1002);
+  assert(encoderMap[0] == 0x2001 && encoderMap[1] == 0x2002);
+  assert(macros[0] == 0 && macros[1] == 0);
+  assert(keyboard.layoutOptions() == 0x30010203UL);
+  assert(customValue.value == 0x41);
+  assert(customValue.loadCalls == 1);
+}
+
+void assertLoadDirtyContract() {
+  uint16_t keymap[1] = {0x1001};
+  const uint16_t defaults[1] = {0x1001};
+  uint8_t storageBytes[32] = {};
+  uint8_t loadBuffer[6];
+  via::MemoryTransport transport;
+  via::MemoryStorage storage(storageBytes, sizeof(storageBytes));
+  via::Config config = {1, 1, 1, keymap, defaults};
+  config.loadBuffer = loadBuffer;
+  config.loadBufferBytes = sizeof(loadBuffer);
+  via::Protocol keyboard(config, transport, &storage);
+  assert(keyboard.begin(0));
+  assert(keyboard.save());
+
+  uint8_t packet[via::kPacketSize] = {0x05, 0, 0, 0, 0xA0, 0x01};
+  assert(keyboard.process(packet, 0));
+  assert(keyboard.dirty());
+  assert(keyboard.load());
+  assert(!keyboard.dirty());
+  assert(keymap[0] == 0x1001);
+
+  packet[0] = 0x05;
+  packet[4] = 0xA0;
+  packet[5] = 0x02;
+  assert(keyboard.process(packet, 0));
+  assert(keyboard.dirty());
+  storageBytes[12] ^= 1;
   assert(!keyboard.load());
-  assert(keymap[0] == 0xA001 && keymap[1] == 0xA002);
-  assert(encoderMap[0] == 0xB001 && encoderMap[1] == 0xB002);
-  assert(macros[0] == 0xC1 && macros[1] == 0xC2);
-  assert(keyboard.layoutOptions() == 0xE0010203UL);
-  assert(customValue.value == 0xD1);
-  assert(customValue.loadCalls == 0);
+  assert(keyboard.dirty());
+  assert(keymap[0] == 0xA002);
 }
 
 void assertCustomValidationRejectionDoesNotMutateActiveState() {
@@ -1616,7 +1651,8 @@ int main() {
   assertTenFieldConfigWithoutStorageBegins();
   assertCustomValidationRejectionDoesNotMutateActiveState();
   assertFactoryResetValidationRejectionIsTransactional();
-  assertSecondPassFailureDoesNotMutateActiveState();
+  assertLoadDirtyContract();
+  assertLoadValidatesExactlyPublishedBytes();
   assertSuccessfulFactoryResetPublishesOnce();
   assertBulkBoundsAndEmptyWrites();
   assertCustomStateSerializedOncePerSave();

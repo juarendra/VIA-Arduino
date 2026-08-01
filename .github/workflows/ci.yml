@@ -26,6 +26,10 @@ jobs:
             tests/protocol_test.cpp src/VIA_Protocol.cpp src/VIA_RGBLight.cpp \
             -o protocol_test
           ./protocol_test
+          g++ -std=c++11 -Wall -Wextra -Werror -Itests/fakes -Isrc \
+            tests/tinyusb_rawhid_test.cpp src/VIA_TinyUSB_RawHID.cpp \
+            -o tinyusb_rawhid_test
+          ./tinyusb_rawhid_test
       - uses: arduino/setup-arduino-cli@v2
       - name: Compile Arduino example
         run: |

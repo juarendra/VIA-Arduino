@@ -53,13 +53,41 @@ the two interfaces must not share report IDs. See
 Use a reserved region that is large enough for:
 
 ```text
-sizeof(header) + (rows × columns × layers × 2) + macroBytes + customValueState
+payload = (rows × columns × layers × 2)
+        + (layers × encoderCount × 2 directions × 2)
+        + macroBytes + 4 layout bytes + customValueState
+storage bytes = 12-byte header + payload
 ```
 
 The built-in record has magic, version, payload size, and CRC32. A production
 flash adapter should use two alternating pages/slots so that a reset or power
 loss never destroys the last complete record. Do not point a flash adapter at
 the bootloader, option bytes, or application code.
+
+Storage-backed protocols also require a separate static load workspace. It
+must hold the complete payload and must not overlap keymap, encoder, macro, or
+custom active state:
+
+```cpp
+static uint8_t loadBuffer[sizeof(keymap) + sizeof(encoderMap) +
+                          sizeof(macros) + sizeof(uint32_t) + customStateBytes];
+
+via::Config config = {
+    rows, columns, layers, keymap, defaultKeymap,
+    macros, sizeof(macros), macroCount, firmwareVersion, autoSaveMs,
+    defaultLayoutOptions, encoderCount, encoderMap, defaultEncoderMap,
+    loadBuffer, sizeof(loadBuffer),
+};
+via::Protocol keyboard(config, transport, &storage, customValue);
+```
+
+`keyboard.requiredLoadBufferSize()` returns the exact payload size, or `0` when
+the payload cannot fit the supported record. `begin()` returns false before
+storage access when a storage-backed configuration omits the workspace,
+provides too few bytes, or aliases built-in active state. A `CustomValue`
+implementation must keep its active state outside this workspace and leave it
+unchanged when `loadState()` returns false. Configurations without `Storage` do
+not need a load workspace.
 
 `MemoryStorage` is only a test backend; it intentionally does not survive a
 power cycle.

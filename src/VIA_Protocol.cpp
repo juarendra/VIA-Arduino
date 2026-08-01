@@ -23,6 +23,16 @@ uint32_t crc32Update(uint32_t crc, uint8_t value) {
   return crc;
 }
 
+bool rangesOverlap(const void* first, uint32_t firstBytes,
+                   const void* second, uint32_t secondBytes) {
+  if (!firstBytes || !secondBytes) return false;
+  const uintptr_t firstStart = reinterpret_cast<uintptr_t>(first);
+  const uintptr_t secondStart = reinterpret_cast<uintptr_t>(second);
+  return firstStart <= secondStart
+             ? secondStart - firstStart < firstBytes
+             : firstStart - secondStart < secondBytes;
+}
+
 }  // namespace
 
 Protocol::Protocol(const Config& config, Transport& transport, Storage* storage,
@@ -45,7 +55,7 @@ bool Protocol::begin(uint32_t nowMs) {
       (config_.encoderCount != 0 &&
        (config_.encoderMap == nullptr || config_.defaultEncoderMap == nullptr)) ||
       !stateBytes(bytes, customBytes) ||
-      (storage_ && (config_.loadBuffer == nullptr || config_.loadBufferBytes < bytes))) {
+      (storage_ && !loadBufferValid(bytes))) {
     return false;
   }
   if (!load()) resetBuffers();
@@ -313,6 +323,23 @@ bool Protocol::stateBytes(size_t& bytes, size_t& customBytes) const {
   return true;
 }
 
+size_t Protocol::requiredLoadBufferSize() const {
+  size_t bytes;
+  size_t customBytes;
+  return stateBytes(bytes, customBytes) ? bytes : 0;
+}
+
+bool Protocol::loadBufferValid(size_t bytes) const {
+  if (config_.loadBuffer == nullptr || config_.loadBufferBytes < bytes) return false;
+  return !rangesOverlap(config_.loadBuffer, static_cast<uint32_t>(bytes),
+                        config_.keymap, static_cast<uint32_t>(keymapBytes())) &&
+         !rangesOverlap(config_.loadBuffer, static_cast<uint32_t>(bytes),
+                        config_.encoderMap,
+                        static_cast<uint32_t>(encoderMapBytes())) &&
+         !rangesOverlap(config_.loadBuffer, static_cast<uint32_t>(bytes),
+                        config_.macros, config_.macroBytes);
+}
+
 uint32_t Protocol::stateCrc(const uint8_t* customState, size_t customSize) const {
   uint32_t crc = 0xFFFFFFFFUL;
   const uint8_t* keymap = reinterpret_cast<const uint8_t*>(config_.keymap);
@@ -332,7 +359,7 @@ bool Protocol::load() {
   size_t bytes;
   size_t customSize;
   if (!storage_ || !stateBytes(bytes, customSize)) return false;
-  if (config_.loadBuffer == nullptr || config_.loadBufferBytes < bytes) return false;
+  if (!loadBufferValid(bytes)) return false;
   if (storage_->capacity() < sizeof(StateHeader) + bytes) return false;
   StateHeader header;
   if (!storage_->read(0, reinterpret_cast<uint8_t*>(&header), sizeof(header)) ||

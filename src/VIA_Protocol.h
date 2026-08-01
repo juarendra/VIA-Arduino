@@ -40,7 +40,8 @@ class CustomValue {
   virtual bool save(uint8_t packet[kPacketSize]) { return packet[1] == 0x02; }
   virtual size_t stateSize() const { return 0; }
   virtual bool saveState(uint8_t*, size_t) const { return true; }
-  // Implementations must leave active state unchanged when returning false.
+  // The load workspace must not alias active custom state. Implementations must
+  // leave active state unchanged when returning false.
   virtual bool loadState(const uint8_t*, size_t) { return true; }
 };
 
@@ -96,8 +97,8 @@ struct Config {
   uint8_t encoderCount;
   uint16_t* encoderMap;
   const uint16_t* defaultEncoderMap;
-  // Storage-backed load requires a caller-owned payload staging buffer that
-  // does not overlap keymap, encoder, macro, or custom state.
+  // Required with Storage: caller-owned payload staging space, sized by
+  // Protocol::requiredLoadBufferSize(), that does not overlap active state.
   uint8_t* loadBuffer;
   uint16_t loadBufferBytes;
 };
@@ -111,6 +112,7 @@ class Protocol {
   void task(uint32_t nowMs);
   bool process(uint8_t packet[kPacketSize], uint32_t nowMs);
 
+  size_t requiredLoadBufferSize() const;
   bool load();
   bool save();
   bool factoryReset();
@@ -129,6 +131,7 @@ class Protocol {
   size_t keymapBytes() const;
   size_t encoderMapBytes() const;
   bool stateBytes(size_t& bytes, size_t& customBytes) const;
+  bool loadBufferValid(size_t bytes) const;
   uint32_t stateCrc(const uint8_t* customState, size_t customSize) const;
   bool writeState();
   void readDynamicKeymap(uint16_t offset, uint8_t size, uint8_t* output) const;

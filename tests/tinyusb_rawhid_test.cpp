@@ -23,13 +23,8 @@ static void assertFailedBeginIsFinal() {
   via::tinyusb::RawHID failed;
   assert(!failed.begin());
   assert(Adafruit_USBD_HID::beginAttempts == 1);
+  assert(Adafruit_USBD_HID::registeredInterface == 0);
   assertInactive(failed);
-
-  uint8_t report[via::kPacketSize] = {0x31};
-  Adafruit_USBD_HID::dispatchSetReport(0, HID_REPORT_TYPE_OUTPUT, report,
-                                      sizeof(report));
-  uint8_t received[via::kPacketSize] = {};
-  assert(!failed.receive(received));
 
   Adafruit_USBD_HID::beginResult = true;
   via::tinyusb::RawHID replacement;

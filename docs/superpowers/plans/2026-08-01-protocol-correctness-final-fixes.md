@@ -153,12 +153,13 @@
 **Interfaces:**
 - Keeps mandatory caller-owned full `Config::loadBuffer` and all public method
   signatures source-compatible.
-- Gives `RawHID` an owning destructor while preserving one instance per USB
-  device and provisional callback registration during `begin()`.
+- Gives `RawHID` an owning destructor while preserving one wrapper owner per USB
+  device. Task 11 supersedes Task 10's retry assumptions after upstream source
+  review.
 
 - [ ] Add and push failing tests for changing storage reads, successful and
-  failed load dirty state, failed TinyUSB initialization replacement, and owner
-  destruction replacement before production code.
+  failed load dirty state, failed TinyUSB initialization ownership cleanup, and
+  owner destruction cleanup before production code.
 - [ ] Read each payload once into `loadBuffer`; check CRC and custom state on
   those exact bytes before publishing live state or callbacks.
 - [ ] Clear dirty state only after successful load state/callback publication;
@@ -187,16 +188,24 @@
 - Keeps fixed 32-byte packets, public signatures, C++11, and no-heap behavior.
 - Uses one process-lifetime HID interface and one irreversible begin-attempt gate
   per device reset. Wrapper pointers are ownership tokens only.
+- Adafruit TinyUSB 3.7.7 registers a HID instance only after `addInterface()`
+  succeeds. Successful registration has no unregister path; failed registration
+  leaves no callback target. This adapter still rejects retries after any attempt
+  to keep one deterministic device setup path.
 
-- [ ] Add and push tests-only RED for persistent failed/successful registration,
-  owner rejection, callback safety, receive no-overwrite, and send completion.
+- [ ] Add and push tests-only RED for failed no-registration, persistent
+  successful registration, owner rejection, callback safety, receive
+  no-overwrite, and send completion.
 - [ ] Move HID, callback RX state, ownership, and begin-attempt state to static
   device-lifetime storage.
 - [ ] Make the static callback mutate only static RX state and drop reports when
   no owner exists.
 - [ ] Reject all operations from non-owners; clear only ownership on destruction
-  and never claim rollback or unregister support.
+  and never claim successful-registration unregister support.
 - [ ] Correct Task 10 lifetime claims in docs, changelog, and report.
 - [ ] Run WSL C++11 warnings-as-errors and ASan/UBSan protocol and TinyUSB suites,
   push periodically, and verify GitHub lint, native, Uno, and RP2040 jobs.
 - [ ] Record status, commits, evidence, and concerns in the Task 11 report.
+- [ ] Fix round 1: align the host fake and lifetime rationale with authoritative
+  Adafruit TinyUSB 3.7.7 begin ordering while retaining the adapter's deliberate
+  one-attempt policy.

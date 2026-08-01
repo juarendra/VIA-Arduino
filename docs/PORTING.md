@@ -59,12 +59,18 @@ TinyUSB**. Install **Adafruit TinyUSB Library**, create `via::tinyusb::RawHID`,
 call `begin()` before USB enumeration, and pass it to `via::Protocol`.
 
 `RawHID` keeps one static HID interface, callback, and receive buffer alive for
-the device lifetime. Exactly one `begin()` attempt is allowed per device reset
-because TinyUSB does not roll back its interface registry. A failed attempt or
-owner destruction clears wrapper ownership but does not unregister the
-interface; replacement attempts remain rejected until reset. Reports arriving
-without a live owner are safely dropped. Keep a successfully begun wrapper alive
-for as long as the application needs VIA transport.
+the device lifetime. In Adafruit TinyUSB 3.7.7, a failed `addInterface()` returns
+from `Adafruit_USBD_HID::begin()` before HID instance registration. A successful
+begin does register the HID object, and TinyUSB provides no unregister path;
+this successful lifetime is why the object and callback storage are static.
+
+The adapter deliberately permits exactly one `begin()` attempt per device reset,
+even when upstream registration fails. A failed attempt leaves no registered
+callback target, clears wrapper ownership, and conservatively rejects retries or
+replacement wrappers until reset. Destroying a successful owner also clears only
+wrapper ownership; the registered static interface remains alive and later
+reports are safely dropped. Keep a successful wrapper alive for as long as the
+application needs VIA transport.
 
 The reference adapter deliberately provides only the vendor Raw HID interface.
 Create a second TinyUSB HID interface for keyboard reports in the application;

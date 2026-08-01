@@ -26,9 +26,9 @@ class Adafruit_USBD_HID {
   }
   bool begin() {
     ++beginAttempts;
-    if (registeredInterface) return false;
+    if (!beginResult || registeredInterface) return false;
     registeredInterface = this;
-    return beginResult;
+    return true;
   }
   bool ready() { return readyResult; }
   bool sendReport(uint8_t, const uint8_t*, size_t) { return sendResult; }

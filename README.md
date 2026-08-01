@@ -64,9 +64,11 @@ the compile-tested RP2040 adapters.
 ## Persistence
 
 `via::Storage` is optional. When supplied, `Config::loadBuffer` is mandatory:
-it must be caller-owned, at least `requiredLoadBufferSize()` bytes, and must not
-overlap keymap, encoder, macro, or custom active state. `begin()` rejects an
-invalid workspace before accessing storage.
+it must be caller-owned and at least `requiredLoadBufferSize()` bytes. The core
+rejects overlap with configured keymap, encoder-map, and macro buffers before
+accessing storage. It cannot inspect state owned by a `CustomValue` handler, so
+the caller must keep that active state outside the load workspace as required
+by the [porting contract](docs/PORTING.md).
 
 ```cpp
 uint8_t macros[64];
@@ -87,6 +89,11 @@ bool saved = storedProtocol.save();
 `MemoryStorage` is for tests and examples and does not survive power loss.
 Board storage adapters must reserve enough space for the 12-byte record header
 plus the complete payload. See [`docs/PORTING.md`](docs/PORTING.md).
+
+The 0.2.0 storage schema is version 2. Version 1 records from 0.1.0 are
+rejected; `begin()` performs its normal one-time startup fallback to configured
+built-in defaults. No automatic record migration or save occurs, so users must
+reconfigure and save new state.
 
 ## Configuration And Callbacks
 

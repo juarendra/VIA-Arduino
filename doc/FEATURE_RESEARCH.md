@@ -25,7 +25,15 @@ callback.
 Storage records contain a 12-byte header, keymap, encoder map, macros, layout
 options, and up to 16 custom-state bytes. Reads validate metadata and CRC before
 committing staged state. Every storage-backed `Protocol` requires a distinct,
-caller-owned `loadBuffer` sized by `requiredLoadBufferSize()`.
+caller-owned `loadBuffer` sized by `requiredLoadBufferSize()`. The core rejects
+overlap with configured keymap, encoder-map, and macro buffers. The caller must
+keep `CustomValue` handler-owned active state separate because the core cannot
+inspect it.
+
+The schema changed from version 1 to version 2. Version 1 records from 0.1.0
+are rejected, causing `begin()` to perform its one-time startup fallback to
+configured built-in defaults. There is no automatic migration or save; users
+must reconfigure and save a version 2 record.
 
 ## Sensitive Operations
 

@@ -65,14 +65,18 @@ payload = (rows × columns × layers × 2)
 storage bytes = 12-byte header + payload
 ```
 
-The built-in record has magic, version, payload size, and CRC32. A production
-flash adapter should use two alternating pages/slots so that a reset or power
-loss never destroys the last complete record. Do not point a flash adapter at
-the bootloader, option bytes, or application code.
+The built-in record has magic, version, payload size, and CRC32. Version 2 is
+used by 0.2.0; version 1 records from 0.1.0 are rejected. On a rejected load,
+`begin()` performs its normal one-time startup fallback to configured built-in
+defaults. No automatic migration or save occurs, so users must reconfigure and
+save a version 2 record. A production flash adapter should use two alternating
+pages/slots so that a reset or power loss never destroys the last complete
+record. Do not point a flash adapter at the bootloader, option bytes, or
+application code.
 
 Storage-backed protocols also require a separate static load workspace. It
-must hold the complete payload and must not overlap keymap, encoder, macro, or
-custom active state:
+must hold the complete payload. The core rejects overlap with configured
+keymap, encoder-map, and macro buffers:
 
 ```cpp
 static uint8_t loadBuffer[sizeof(keymap) + sizeof(encoderMap) +
@@ -90,10 +94,11 @@ via::Protocol keyboard(config, transport, &storage, customValue);
 `keyboard.requiredLoadBufferSize()` returns the exact payload size, or `0` when
 the payload cannot fit the supported record. `begin()` returns false before
 storage access when a storage-backed configuration omits the workspace,
-provides too few bytes, or aliases built-in active state. A `CustomValue`
-implementation must keep its active state outside this workspace and leave it
-unchanged when `loadState()` returns false. Configurations without `Storage` do
-not need a load workspace.
+provides too few bytes, or aliases configured keymap, encoder-map, or macro
+buffers. The core cannot inspect active state owned by a `CustomValue`
+implementation; the caller must keep that state outside this workspace. The
+implementation must also leave active state unchanged when `loadState()`
+returns false. Configurations without `Storage` do not need a load workspace.
 
 `MemoryStorage` is only a test backend; it intentionally does not survive a
 power cycle.

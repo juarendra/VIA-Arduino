@@ -36,9 +36,17 @@
 
 ### Migration
 
+- The persistent record schema changed from version 1 to version 2. Existing
+  0.1.0 records are rejected. On the first 0.2.0 `begin()`, the rejected load
+  triggers the normal one-time startup fallback: the configured default keymap,
+  encoder maps, and layout options are restored, and macros are cleared. No
+  automatic migration or save exists; users must reconfigure in VIA and save a
+  new record.
 - Storage-backed configurations must provide a separate `Config::loadBuffer`
-  of at least `Protocol::requiredLoadBufferSize()` bytes. `begin()` and `load()`
-  reject missing, undersized, or overlapping workspaces before storage access.
+  of at least `Protocol::requiredLoadBufferSize()` bytes. The core rejects a
+  missing or undersized workspace and overlap with configured keymap, encoder-
+  map, or macro buffers. It cannot inspect `CustomValue` handler-owned active
+  state; callers must keep that state separate as documented in `PORTING.md`.
 - Set each security flag deliberately if upgrading code relied on matrix
   disclosure, factory reset, or bootloader jump being available.
 - Applications remain responsible for matrix scanning and executing returned

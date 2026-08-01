@@ -79,15 +79,17 @@ bool Protocol::process(uint8_t packet[kPacketSize], uint32_t nowMs) {
             packet[0] = 0xFF;
             break;
           }
-          const uint8_t maxRows = (kPacketSize - 3) / bytesPerRow;
+          const uint8_t maxRows = 28 / bytesPerRow;
           const uint8_t startRow = packet[2];
           uint8_t outIndex = 3;
           for (uint8_t i = 0; i < maxRows; ++i) {
-            const uint8_t row = startRow + i;
-            uint32_t rowData = (callbacks_ && row < config_.rows) ? callbacks_->matrixRow(row) : 0;
+            const uint16_t row = static_cast<uint16_t>(startRow) + i;
+            const uint32_t rowData = (callbacks_ && row < config_.rows)
+                                         ? callbacks_->matrixRow(static_cast<uint8_t>(row))
+                                         : 0;
             for (uint8_t b = 0; b < bytesPerRow; ++b) {
-              packet[outIndex++] = static_cast<uint8_t>(rowData & 0xFF);
-              rowData >>= 8;
+              packet[outIndex++] = static_cast<uint8_t>(
+                  rowData >> (8 * (bytesPerRow - b - 1)));
             }
           }
           while (outIndex < kPacketSize) packet[outIndex++] = 0;
@@ -129,7 +131,7 @@ bool Protocol::process(uint8_t packet[kPacketSize], uint32_t nowMs) {
       }
       break;
     case 0x06:  // dynamic keymap reset
-      resetBuffers();
+      memcpy(config_.keymap, config_.defaultKeymap, keymapBytes());
       markDirty(nowMs);
       break;
     case 0x07:  // set custom value

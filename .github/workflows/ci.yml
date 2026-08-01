@@ -61,6 +61,18 @@ jobs:
             -fno-omit-frame-pointer -Isrc tests/matrix_test.cpp \
             src/VIA_Matrix.cpp -o matrix_test_san && ./matrix_test_san
 
+  stm32f1-usb:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run STM32F1 USB host-side test
+        run: |
+          g++ -std=c++11 -Wall -Wextra -Werror \
+            -Itests/fakes -Isrc \
+            tests/stm32f1_usb_test.cpp src/VIA_STM32F1_USB.cpp \
+            tests/fakes/usbd_core.cpp -o stm32f1_usb_test && \
+            ./stm32f1_usb_test
+
   test:
     runs-on: ubuntu-latest
     steps:

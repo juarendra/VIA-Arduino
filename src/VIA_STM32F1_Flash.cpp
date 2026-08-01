@@ -1,3 +1,5 @@
+#ifdef STM32F1xx
+
 #include "VIA_STM32F1_Flash.h"
 
 #include <string.h>
@@ -163,3 +165,5 @@ bool FlashStorage::erase() {
 
 }  // namespace stm32f1
 }  // namespace via
+
+#endif  // STM32F1xx

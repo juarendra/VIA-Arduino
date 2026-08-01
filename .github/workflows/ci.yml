@@ -79,12 +79,12 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build and run flash tests
         run: |
-          g++ -std=c++11 -Wall -Wextra -Werror -Isrc \
+          g++ -std=c++11 -Wall -Wextra -Werror -DSTM32F1xx -Isrc \
             tests/flash_test.cpp src/VIA_STM32F1_Flash.cpp -o flash_test && \
             ./flash_test
       - name: Build and run flash tests (ASan/UBSan)
         run: |
-          g++ -std=c++11 -Wall -Wextra -Werror \
+          g++ -std=c++11 -Wall -Wextra -Werror -DSTM32F1xx \
             -fsanitize=address,undefined -fno-omit-frame-pointer -Isrc \
             tests/flash_test.cpp src/VIA_STM32F1_Flash.cpp -o flash_test_san && \
             ./flash_test_san
@@ -131,4 +131,21 @@ jobs:
         run: |
           arduino-cli compile --clean --warnings all \
             --fqbn "STMicroelectronics:stm32:GenF1:pnum=BLUEPILL_F103CB,xserial=disabled,usb=HID,xusb=FS,opt=oslto,dbg=none,rtlib=nano,upload_method=swdMethod" \
-            --libraries . examples/STM32F103_Keyboard_MVP
+            --libraries . --build-path stm32_build \
+            examples/STM32F103_Keyboard_MVP
+      - name: Install ARM toolchain for size check
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq gcc-arm-none-eabi
+      - name: Size gate STM32F103
+        run: |
+          ELF=$(find stm32_build -name '*.elf' | head -1)
+          echo "ELF: $ELF"
+          arm-none-eabi-size -B "$ELF" > size_out.txt
+          cat size_out.txt
+          FLASH=$(tail -1 size_out.txt | awk '{print $1+$2}')
+          RAM=$(tail -1 size_out.txt | awk '{print $2+$3}')
+          echo "flash=${FLASH} ram=${RAM}"
+          test "$FLASH" -le 114688 || { echo "FLASH $FLASH > 112 KiB"; exit 1; }
+          test "$RAM" -le 12288 || { echo "RAM $RAM > 12 KiB"; exit 1; }
+          echo "Size OK"

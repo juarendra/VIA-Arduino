@@ -91,5 +91,125 @@ int main() {
     assert(matrix2.rawRow(0) == (1U << 2));
   }
 
+  // DEBOUNCE: zero debounce publishes immediately
+  {
+    via::Pin rowPins[1] = {100};
+    via::Pin colPins[1] = {200};
+    uint32_t rawRows[1] = {0};
+    uint32_t candidate[1] = {0};
+    uint32_t stable[1] = {0};
+    uint32_t changed[1] = {0};
+    FakeMatrixIO io;
+    io.keyMap[100 & 0x1F] = 0x01;
+    via::MatrixConfig cfg = {1, 1, rowPins, colPins, via::kColToRow, 30, 0,
+                             rawRows, candidate, stable, changed};
+    via::Matrix matrix(cfg, io);
+    assert(matrix.begin());
+    matrix.task(0);
+    assert(matrix.stableRows() == 0x01);
+    assert(matrix.changedRows() == 0x01);
+  }
+
+  // DEBOUNCE: 10ms debounce delays publication
+  {
+    via::Pin rowPins[1] = {100};
+    via::Pin colPins[1] = {200};
+    uint32_t rawRows[1] = {0};
+    uint32_t candidate[1] = {0};
+    uint32_t stable[1] = {0};
+    uint32_t changed[1] = {0};
+    FakeMatrixIO io;
+    io.keyMap[100 & 0x1F] = 0x01;
+    via::MatrixConfig cfg = {1, 1, rowPins, colPins, via::kColToRow, 30, 10,
+                             rawRows, candidate, stable, changed};
+    via::Matrix matrix(cfg, io);
+    assert(matrix.begin());
+    matrix.task(0);
+    assert(matrix.stableRows() == 0);
+    assert(matrix.changedRows() == 0);
+    matrix.task(9);
+    assert(matrix.stableRows() == 0);
+    assert(matrix.changedRows() == 0);
+    matrix.task(10);
+    assert(matrix.stableRows() == 0x01);
+    assert(matrix.changedRows() == 0x01);
+  }
+
+  // DEBOUNCE: noise spike resets timer, publication delayed
+  {
+    via::Pin rowPins[1] = {100};
+    via::Pin colPins[1] = {200};
+    uint32_t rawRows[1] = {0};
+    uint32_t candidate[1] = {0};
+    uint32_t stable[1] = {0};
+    uint32_t changed[1] = {0};
+    FakeMatrixIO io;
+    io.keyMap[100 & 0x1F] = 0x01;
+    via::MatrixConfig cfg = {1, 1, rowPins, colPins, via::kColToRow, 30, 10,
+                             rawRows, candidate, stable, changed};
+    via::Matrix matrix(cfg, io);
+    assert(matrix.begin());
+    matrix.task(0);
+    io.keyMap[100 & 0x1F] = 0x00;
+    matrix.task(2);
+    io.keyMap[100 & 0x1F] = 0x01;
+    matrix.task(3);
+    matrix.task(12);
+    assert(matrix.stableRows() == 0);
+    matrix.task(13);
+    assert(matrix.stableRows() == 0x01);
+    assert(matrix.changedRows() == 0x01);
+  }
+
+  // DEBOUNCE: millis() wrap handled with unsigned subtraction
+  {
+    via::Pin rowPins[1] = {100};
+    via::Pin colPins[1] = {200};
+    uint32_t rawRows[1] = {0};
+    uint32_t candidate[1] = {0};
+    uint32_t stable[1] = {0};
+    uint32_t changed[1] = {0};
+    FakeMatrixIO io;
+    io.keyMap[100 & 0x1F] = 0x01;
+    via::MatrixConfig cfg = {1, 1, rowPins, colPins, via::kColToRow, 30, 10,
+                             rawRows, candidate, stable, changed};
+    via::Matrix matrix(cfg, io);
+    assert(matrix.begin());
+    uint32_t wrap = (uint32_t)~0UL;
+    matrix.task(wrap - 2);
+    matrix.task(wrap - 1);
+    assert(matrix.stableRows() == 0);
+    matrix.task(0);
+    assert(matrix.stableRows() == 0);
+    matrix.task(6);
+    assert(matrix.stableRows() == 0);
+    matrix.task(7);
+    assert(matrix.stableRows() == 0x01);
+    assert(matrix.changedRows() == 0x01);
+  }
+
+  // DEBOUNCE: 5ms default timing
+  {
+    via::Pin rowPins[1] = {100};
+    via::Pin colPins[1] = {200};
+    uint32_t rawRows[1] = {0};
+    uint32_t candidate[1] = {0};
+    uint32_t stable[1] = {0};
+    uint32_t changed[1] = {0};
+    FakeMatrixIO io;
+    io.keyMap[100 & 0x1F] = 0x01;
+    via::MatrixConfig cfg = {1, 1, rowPins, colPins, via::kColToRow, 30, 5,
+                             rawRows, candidate, stable, changed};
+    via::Matrix matrix(cfg, io);
+    assert(matrix.begin());
+    matrix.task(0);
+    assert(matrix.stableRows() == 0);
+    matrix.task(4);
+    assert(matrix.stableRows() == 0);
+    matrix.task(5);
+    assert(matrix.stableRows() == 0x01);
+    assert(matrix.changedRows() == 0x01);
+  }
+
   return 0;
 }

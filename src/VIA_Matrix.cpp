@@ -2,7 +2,7 @@
 
 namespace via {
 
-void Matrix::task(uint32_t) {
+void Matrix::task(uint32_t ms) {
   if (config_.direction == kColToRow) {
     for (uint8_t r = 0; r < config_.rows; ++r) {
       io_.driveLow(config_.rowPins[r]);
@@ -35,6 +35,42 @@ void Matrix::task(uint32_t) {
       }
 
       io_.release(config_.columnPins[c]);
+    }
+  }
+
+  bool rawChanged = false;
+  for (uint8_t r = 0; r < config_.rows; ++r) {
+    if (config_.rawRows[r] != prevRaw_[r])
+      rawChanged = true;
+  }
+
+  if (rawChanged) {
+    for (uint8_t r = 0; r < config_.rows; ++r) {
+      config_.candidateRows[r] = config_.rawRows[r];
+      prevRaw_[r] = config_.rawRows[r];
+    }
+    lastRawChangeTS_ = ms;
+    debouncePending_ = true;
+    if (config_.debounceMs == 0) {
+      for (uint8_t r = 0; r < config_.rows; ++r) {
+        uint32_t prev = config_.stableRows[r];
+        config_.stableRows[r] = config_.candidateRows[r];
+        config_.changedRows[r] = prev ^ config_.stableRows[r];
+      }
+      debouncePending_ = false;
+    }
+    return;
+  }
+
+  if (debouncePending_) {
+    uint32_t elapsed = ms - lastRawChangeTS_;
+    if (elapsed >= config_.debounceMs) {
+      for (uint8_t r = 0; r < config_.rows; ++r) {
+        uint32_t prev = config_.stableRows[r];
+        config_.stableRows[r] = config_.candidateRows[r];
+        config_.changedRows[r] = prev ^ config_.stableRows[r];
+      }
+      debouncePending_ = false;
     }
   }
 }

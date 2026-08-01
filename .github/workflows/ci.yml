@@ -16,6 +16,15 @@ jobs:
         with:
           library-manager: update
 
+  keyboard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run keyboard tests
+        run: |
+          g++ -std=c++11 -Wall -Wextra -Werror -Isrc \
+            tests/keyboard_test.cpp -o keyboard_test && ./keyboard_test
+
   matrix:
     runs-on: ubuntu-latest
     steps:

@@ -107,6 +107,23 @@ class ChannelSevenCustomValue : public via::CustomValue {
   uint8_t saveCalls;
 };
 
+class LegacyCustomValue : public via::CustomValue {
+ public:
+  LegacyCustomValue() : setCalls(0), getCalls(0) {}
+
+  bool set(uint8_t packet[via::kPacketSize]) override {
+    ++setCalls;
+    return packet[1] == 2;
+  }
+  bool get(uint8_t packet[via::kPacketSize]) override {
+    ++getCalls;
+    return packet[1] == 2;
+  }
+
+  uint8_t setCalls;
+  uint8_t getCalls;
+};
+
 class OversizedCustomValue : public via::CustomValue {
  public:
   bool set(uint8_t[via::kPacketSize]) override { return true; }
@@ -228,6 +245,34 @@ void assertCustomValueRouting() {
   assert(storage.commits == 1);
 }
 
+void assertLegacyCustomValueSaveCompatibility() {
+  uint16_t keymap[1] = {};
+  const uint16_t defaults[1] = {};
+  via::MemoryTransport transport;
+  RecordingStorage storage;
+  LegacyCustomValue customValue;
+  via::Config config = {1, 1, 1, keymap, defaults};
+  via::Protocol keyboard(config, transport, &storage, &customValue);
+  assert(keyboard.begin(0));
+  storage.reset();
+
+  uint8_t packet[via::kPacketSize] = {};
+  packet[1] = 2;
+  for (uint8_t command = 0x07; command <= 0x09; ++command) {
+    packet[0] = command;
+    assert(keyboard.process(packet, 0));
+  }
+  assert(customValue.setCalls == 1);
+  assert(customValue.getCalls == 1);
+  assert(storage.commits == 1);
+
+  packet[0] = 0x09;
+  packet[1] = 7;
+  assert(!keyboard.process(packet, 0));
+  assert(packet[0] == 0xFF);
+  assert(storage.commits == 1);
+}
+
 void assertOversizedCustomStateRejectedBeforeStorageAccess() {
   uint16_t keymap[1] = {};
   const uint16_t defaults[1] = {};
@@ -264,6 +309,7 @@ int main() {
   assertMatrixRowOffsetDoesNotWrap();
   assertLegacyIndicationCallback();
   assertCustomValueRouting();
+  assertLegacyCustomValueSaveCompatibility();
   assertOversizedCustomStateRejectedBeforeStorageAccess();
   assertRGBLightSaveChannel();
 

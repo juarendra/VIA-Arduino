@@ -2,6 +2,7 @@
 .vscode/
 .idea/
 build/
+.worktrees/
 *.elf
 *.hex
 *.bin

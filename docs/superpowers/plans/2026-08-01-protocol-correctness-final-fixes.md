@@ -170,3 +170,33 @@
   push periodically, and verify complete GitHub CI.
 - [ ] Record status, RED/GREEN/CI evidence, commits, and concerns in Task 10
   report.
+
+### Task 11: Static TinyUSB Device Lifetime
+
+**Files:**
+- Modify: `src/VIA_TinyUSB_RawHID.h`
+- Modify: `src/VIA_TinyUSB_RawHID.cpp`
+- Modify: `tests/fakes/Adafruit_TinyUSB.h`
+- Modify: `tests/tinyusb_rawhid_test.cpp`
+- Modify: `.github/workflows/ci.yml`
+- Modify: `CHANGELOG.md`
+- Modify: `docs/PORTING.md`
+- Create: `.superpowers/sdd/2026-08-01-protocol-correctness/task-11-report.md`
+
+**Interfaces:**
+- Keeps fixed 32-byte packets, public signatures, C++11, and no-heap behavior.
+- Uses one process-lifetime HID interface and one irreversible begin-attempt gate
+  per device reset. Wrapper pointers are ownership tokens only.
+
+- [ ] Add and push tests-only RED for persistent failed/successful registration,
+  owner rejection, callback safety, receive no-overwrite, and send completion.
+- [ ] Move HID, callback RX state, ownership, and begin-attempt state to static
+  device-lifetime storage.
+- [ ] Make the static callback mutate only static RX state and drop reports when
+  no owner exists.
+- [ ] Reject all operations from non-owners; clear only ownership on destruction
+  and never claim rollback or unregister support.
+- [ ] Correct Task 10 lifetime claims in docs, changelog, and report.
+- [ ] Run WSL C++11 warnings-as-errors and ASan/UBSan protocol and TinyUSB suites,
+  push periodically, and verify GitHub lint, native, Uno, and RP2040 jobs.
+- [ ] Record status, commits, evidence, and concerns in the Task 11 report.

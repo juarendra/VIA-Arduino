@@ -34,8 +34,9 @@
 - Persistence reads each record payload once into caller staging, validates and
   publishes those same bytes, clears dirty state on success, and preserves it on
   failure.
-- RP2040 Raw HID releases its single callback owner after failed initialization
-  or owner destruction so a replacement instance can initialize.
+- RP2040 Raw HID keeps its TinyUSB interface and callback storage alive for the
+  device lifetime. Exactly one registration attempt is allowed per device reset;
+  failed initialization or owner destruction rejects replacement instances.
 
 ### Security
 

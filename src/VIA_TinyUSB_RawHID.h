@@ -13,7 +13,8 @@ namespace tinyusb {
 
 /* Adafruit TinyUSB Raw HID adapter. The descriptor is deliberately its own
  * vendor-defined HID interface: VIA must not share a report ID with keyboard
- * reports. One RawHID instance is supported per USB device. */
+ * reports. Static interface state permits exactly one begin attempt per device
+ * reset. */
 class RawHID : public Transport {
  public:
   RawHID();

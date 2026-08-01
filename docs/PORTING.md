@@ -58,10 +58,13 @@ using the Earle Philhower Arduino-Pico core with **Tools → USB Stack → Adafr
 TinyUSB**. Install **Adafruit TinyUSB Library**, create `via::tinyusb::RawHID`,
 call `begin()` before USB enumeration, and pass it to `via::Protocol`.
 
-Only one successfully begun `RawHID` instance is supported per USB device. Keep
-that instance alive for the device lifetime. A failed `begin()` releases the
-registration so another instance can initialize; destroying the owning instance
-also releases it.
+`RawHID` keeps one static HID interface, callback, and receive buffer alive for
+the device lifetime. Exactly one `begin()` attempt is allowed per device reset
+because TinyUSB does not roll back its interface registry. A failed attempt or
+owner destruction clears wrapper ownership but does not unregister the
+interface; replacement attempts remain rejected until reset. Reports arriving
+without a live owner are safely dropped. Keep a successfully begun wrapper alive
+for as long as the application needs VIA transport.
 
 The reference adapter deliberately provides only the vendor Raw HID interface.
 Create a second TinyUSB HID interface for keyboard reports in the application;

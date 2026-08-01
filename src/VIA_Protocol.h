@@ -37,7 +37,7 @@ class CustomValue {
   virtual ~CustomValue() {}
   virtual bool set(uint8_t packet[kPacketSize]) = 0;
   virtual bool get(uint8_t packet[kPacketSize]) = 0;
-  virtual bool save(uint8_t packet[kPacketSize]) = 0;
+  virtual bool save(uint8_t packet[kPacketSize]) { return packet[1] == 0x02; }
   virtual size_t stateSize() const { return 0; }
   virtual bool saveState(uint8_t*, size_t) const { return true; }
   virtual bool loadState(const uint8_t*, size_t) { return true; }

@@ -26,7 +26,6 @@ class RGBLight : public CustomValue {
       : state_(state), callbacks_(callbacks) {}
   bool set(uint8_t packet[kPacketSize]) override;
   bool get(uint8_t packet[kPacketSize]) override;
-  bool save(uint8_t packet[kPacketSize]) override;
   size_t stateSize() const override { return sizeof(RGBLightState); }
   bool saveState(uint8_t* output, size_t length) const override;
   bool loadState(const uint8_t* input, size_t length) override;

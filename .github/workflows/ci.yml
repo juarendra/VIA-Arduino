@@ -29,7 +29,8 @@ jobs:
           g++ -std=c++11 -Wall -Wextra -Werror -Itests/fakes -Isrc \
             tests/tinyusb_rawhid_test.cpp src/VIA_TinyUSB_RawHID.cpp \
             -o tinyusb_rawhid_test
-          ./tinyusb_rawhid_test
+          ./tinyusb_rawhid_test failed
+          ./tinyusb_rawhid_test successful
       - uses: arduino/setup-arduino-cli@v2
       - name: Compile Arduino example
         run: |

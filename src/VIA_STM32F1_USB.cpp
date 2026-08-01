@@ -1,6 +1,6 @@
 #include "VIA_STM32F1_USB.h"
 
-#ifdef STM32F1XX
+#if defined(ARDUINO_ARCH_STM32) || defined(STM32F1xx)
 
 #include <string.h>
 

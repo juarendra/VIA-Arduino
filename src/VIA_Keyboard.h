@@ -15,8 +15,8 @@ class KeyboardCallbacks {
  public:
   virtual void hostLedsChanged(uint8_t /*leds*/) {}
   virtual void bootloaderRequested() {}
- protected:
-  ~KeyboardCallbacks() = default;
+ public:
+  virtual ~KeyboardCallbacks() = default;
 };
 
 class LayerState {

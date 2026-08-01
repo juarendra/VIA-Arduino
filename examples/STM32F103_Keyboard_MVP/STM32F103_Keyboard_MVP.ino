@@ -16,7 +16,6 @@
 #include <VIA_Matrix.h>
 #include <VIA_STM32F1_GPIO.h>
 #include <VIA_STM32F1_USB.h>
-#include <VIA_STM32F1_Flash.h>
 #include <VIA_STM32F1_Boot.h>
 
 // --- Matrix ---
@@ -42,7 +41,7 @@ via::MatrixConfig matrixConfig = {
 via::Matrix matrix(matrixConfig, matrixIO);
 
 // --- Keymap ---
-static uint16_t keymap[6 * 18 * 4]        = {};
+static uint16_t keymap[6 * 18 * 4] = {};
 static const uint16_t defaultKeymap[6 * 18 * 4] = {};
 
 via::Config protocolConfig = {
@@ -50,21 +49,17 @@ via::Config protocolConfig = {
     nullptr, 0, 0, 1, 750
 };
 
-// --- Persistence ---
-static uint8_t storageBuffer[2048];
-via::stm32f1::FlashStorage flashStorage(storageBuffer, sizeof(storageBuffer));
-
-// --- Active Codes ---
-static uint16_t activeCodes[6 * 18] = {};
-
 // --- USB ---
 via::stm32f1::UsbDevice usb;
 
 // --- Protocol ---
-via::Protocol protocol(protocolConfig, usb, &flashStorage);
+via::Protocol protocol(protocolConfig, usb);
+
+// --- Active Codes ---
+static uint16_t activeCodes[6 * 18] = {};
 
 // --- Keyboard ---
-static via::KeyboardCallbacks keyboardCallbacks;
+via::KeyboardCallbacks keyboardCallbacks;
 
 via::Keyboard keyboard(matrix, protocol, usb, keyboardCallbacks,
                        activeCodes, 6, 18);
@@ -74,7 +69,6 @@ via::stm32f1::BootCoordinator boot(protocol, usb, keyboardCallbacks);
 
 // --- Setup ---
 void setup() {
-  flashStorage.begin();
   usb.begin();
   protocol.begin(millis());
   keyboard.begin();

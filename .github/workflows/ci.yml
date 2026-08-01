@@ -67,7 +67,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build and run STM32F1 USB host-side test
         run: |
-          g++ -std=c++11 -Wall -Wextra -Werror \
+          g++ -std=c++11 -Wall -Wextra -Werror -DSTM32F1xx \
             -Itests/fakes -Isrc \
             tests/stm32f1_usb_test.cpp src/VIA_STM32F1_USB.cpp \
             tests/fakes/usbd_core.cpp -o stm32f1_usb_test && \

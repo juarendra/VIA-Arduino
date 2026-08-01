@@ -1,6 +1,6 @@
 #pragma once
 
-#ifdef STM32F1XX
+#if defined(ARDUINO_ARCH_STM32) || defined(STM32F1xx)
 
 #include "VIA_Keyboard.h"
 #include "VIA_Protocol.h"

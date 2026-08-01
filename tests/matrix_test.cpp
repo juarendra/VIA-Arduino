@@ -10,19 +10,19 @@ class FakeMatrixIO : public via::MatrixIO {
 
   void inputPullup(via::Pin pin) override {
     ++inputPullupCalls;
-    pinStates[pin] = true;
+    if (pin < sizeof(pinStates)) pinStates[pin] = true;
   }
   void driveLow(via::Pin pin) override {
     ++driveLowCalls;
-    pinStates[pin] = false;
+    if (pin < sizeof(pinStates)) pinStates[pin] = false;
   }
   void release(via::Pin pin) override {
     ++releaseCalls;
-    pinStates[pin] = true;
+    if (pin < sizeof(pinStates)) pinStates[pin] = true;
   }
   bool read(via::Pin pin) override {
     ++readCalls;
-    return pinStates[pin];
+    return (pin < sizeof(pinStates)) ? pinStates[pin] : false;
   }
   void delayMicroseconds(uint16_t us) override {
     ++delayMicrosecondsCalls;
@@ -50,5 +50,10 @@ int main() {
                             raw, candidate, stable, changed};
   via::Matrix matrix(cfg, io);
   assert(!matrix.begin());
+
+  matrix.task(0);
+  assert(matrix.stableRows() == 0);
+  assert(matrix.changedRows() == 0);
+
   return 0;
 }

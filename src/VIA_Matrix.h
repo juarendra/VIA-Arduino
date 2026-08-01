@@ -38,7 +38,10 @@ class Matrix {
 
   bool begin() { return !(config_.rows == 0 || config_.columns == 0); }
 
-  // ponytail: task() and accessors added when scan milestone needs them
+  void task(uint32_t) {}
+
+  uint32_t stableRows() const { return 0; }
+  uint32_t changedRows() const { return 0; }
 
  private:
   const MatrixConfig& config_;

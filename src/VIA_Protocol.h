@@ -138,6 +138,10 @@ class Protocol {
   bool save();
   bool factoryReset();
   bool dirty() const { return dirty_; }
+  uint8_t rows() const { return config_.rows; }
+  uint8_t columns() const { return config_.columns; }
+  uint8_t layers() const { return config_.layers; }
+  const uint16_t* keymap() const { return config_.keymap; }
   uint16_t keycode(uint8_t layer, uint8_t row, uint8_t column) const;
   bool setKeycode(uint8_t layer, uint8_t row, uint8_t column, uint16_t value);
   uint32_t layoutOptions() const { return layoutOptions_; }

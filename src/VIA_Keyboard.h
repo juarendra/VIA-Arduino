@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdint.h>
+#include "VIA_Keycodes.h"
 
 namespace via {
 
@@ -95,6 +96,36 @@ class KeyboardHID {
 
  protected:
   ~KeyboardHID() = default;
+};
+
+class Protocol;
+class Matrix;
+
+struct KeyboardConfig {
+  uint8_t rows;
+  uint8_t columns;
+};
+
+class Keyboard {
+ public:
+  Keyboard(const KeyboardConfig& config, Matrix& matrix, Protocol& protocol,
+           KeyboardHID& hid, uint16_t* activeCodes,
+           KeyboardCallbacks* callbacks = nullptr);
+  bool begin();
+  void task(uint32_t now);
+  uint32_t stableRow(uint8_t row) const;
+
+ private:
+  void buildAndSend();
+  KeyboardReport buildReport() const;
+
+  const KeyboardConfig& config_;
+  Matrix& matrix_;
+  Protocol& protocol_;
+  KeyboardHID& hid_;
+  uint16_t* activeCodes_;
+  KeyboardCallbacks* callbacks_;
+  LayerState layerState_;
 };
 
 }  // namespace via

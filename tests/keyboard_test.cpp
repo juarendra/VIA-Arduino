@@ -1,6 +1,26 @@
 #include <assert.h>
+#include <string.h>
+#include "VIA_Matrix.h"
 #include "VIA_Keycodes.h"
+#include "VIA_Protocol.h"
 #include "VIA_Keyboard.h"
+
+class FakeMatrixIO : public via::MatrixIO {
+ public:
+  FakeMatrixIO() : inputPullupCalls(0), driveLowCalls(0), releaseCalls(0),
+                    readCalls(0), delayMicrosecondsCalls(0), readPos(0), drivenIdx(0) {
+    for (uint8_t i = 0; i < sizeof(keyMap); ++i) keyMap[i] = 0;
+  }
+  void inputPullup(via::Pin) override { ++inputPullupCalls; }
+  void driveLow(via::Pin pin) override { ++driveLowCalls; drivenIdx = pin & 0x1F; readPos = 0; }
+  void release(via::Pin) override { ++releaseCalls; }
+  bool read(via::Pin) override { ++readCalls; return !(keyMap[drivenIdx] & (1U << readPos++)); }
+  void delayMicroseconds(uint16_t) override { ++delayMicrosecondsCalls; }
+  uint8_t inputPullupCalls, driveLowCalls, releaseCalls, readCalls, delayMicrosecondsCalls;
+  uint8_t keyMap[32];
+ private:
+  uint8_t readPos, drivenIdx;
+};
 
 class FakeKeyboardHID : public via::KeyboardHID {
  public:
@@ -298,6 +318,250 @@ int main() {
     ls.applyLayerPress(0, mkLayer(1, 0)); // TG(0) invalid (layer 0 always default)
     // TG(0) is technically weird — but layer >= layerCount check catches 0 which IS valid
     // Testing >= layerCount
+  }
+
+  // --- Keyboard integration tests ---
+
+  class NullTransport : public via::Transport {
+   public:
+    bool receive(uint8_t[via::kPacketSize]) override { return false; }
+    bool send(const uint8_t[via::kPacketSize]) override { return true; }
+  };
+  NullTransport transport;
+
+  // Helper: setup keymap 2 rows x 3 cols, 1 layer. row0: A B C, row1: D E F.
+  const uint8_t kRows = 2, kCols = 3;
+  const uint16_t defaultKm[6] = {0x0004, 0x0005, 0x0006, 0x0007, 0x0008, 0x0009};
+
+  // Test 1: basic press/release — activeCodes + HID report
+  {
+    uint16_t km[6]; memcpy(km, defaultKm, sizeof(km));
+    via::Config pc(kRows, kCols, 1, km, defaultKm,
+                              nullptr, 0, 0, 0, 0, 0, 0, nullptr, nullptr,
+                              nullptr, 0);
+    via::Protocol proto(pc, transport);
+    assert(proto.begin(0));
+
+    via::Pin rp[2] = {100, 101}, cp[3] = {200, 201, 202};
+    uint32_t raw[2] = {0,0}, cnd[2] = {0,0}, stb[2] = {0,0}, chg[2] = {0,0};
+    FakeMatrixIO io;
+    via::MatrixConfig mc = {kRows, kCols, rp, cp, via::kColToRow, 30, 0,
+                            raw, cnd, stb, chg};
+    via::Matrix matrix(mc, io);
+    assert(matrix.begin());
+
+    FakeKeyboardHID hid;
+    uint16_t ac[6] = {0};
+
+    via::Keyboard keyboard(via::KeyboardConfig{kRows, kCols}, matrix, proto, hid, ac);
+    assert(keyboard.begin());
+
+    io.keyMap[100 & 0x1F] = (1U << 1); // press row0 col1 (B)
+    matrix.task(0);
+    keyboard.task(0);
+    assert(ac[1] == 0x0005);
+    assert(hid.sendCalls == 1);
+    assert(hid.lastReport.keys[0] == 0x05);
+    assert(hid.lastReport.modifiers == 0);
+    for (int i = 1; i < 6; ++i) assert(hid.lastReport.keys[i] == 0);
+
+    io.keyMap[100 & 0x1F] = 0; // release
+    matrix.task(100);
+    keyboard.task(100);
+    assert(ac[1] == 0x0000);
+    assert(hid.sendCalls == 2);
+    assert(hid.lastReport.keys[0] == 0);
+    assert(hid.lastReport.modifiers == 0);
+  }
+
+  // Test 2: modifier key press/release
+  {
+    uint16_t km[6]; memcpy(km, defaultKm, sizeof(km));
+    km[0] = 0x00E0; // left control
+    via::Config pc(kRows, kCols, 1, km, km,
+                              nullptr, 0, 0, 0, 0, 0, 0, nullptr, nullptr,
+                              nullptr, 0);
+    via::Protocol proto(pc, transport);
+    assert(proto.begin(0));
+
+    via::Pin rp[2] = {100, 101}, cp[3] = {200, 201, 202};
+    uint32_t raw[2] = {0,0}, cnd[2] = {0,0}, stb[2] = {0,0}, chg[2] = {0,0};
+    FakeMatrixIO io;
+    via::MatrixConfig mc = {kRows, kCols, rp, cp, via::kColToRow, 30, 0,
+                            raw, cnd, stb, chg};
+    via::Matrix matrix(mc, io);
+    assert(matrix.begin());
+
+    FakeKeyboardHID hid;
+    uint16_t ac[6] = {0};
+
+    via::Keyboard keyboard(via::KeyboardConfig{kRows, kCols}, matrix, proto, hid, ac);
+    assert(keyboard.begin());
+
+    io.keyMap[100 & 0x1F] = (1U << 0);
+    matrix.task(0);
+    keyboard.task(0);
+    assert(ac[0] == 0x00E0);
+    assert(hid.sendCalls == 1);
+    assert(hid.lastReport.modifiers == 0x01);
+    assert(hid.lastReport.keys[0] == 0);
+
+    io.keyMap[100 & 0x1F] = 0;
+    matrix.task(100);
+    keyboard.task(100);
+    assert(ac[0] == 0x0000);
+    assert(hid.sendCalls == 2);
+    assert(hid.lastReport.modifiers == 0);
+  }
+
+  // Test 3: VIA remap while held — activeCodes holds original, release sends original
+  {
+    uint16_t km[6]; memcpy(km, defaultKm, sizeof(km));
+    via::Config pc(kRows, kCols, 1, km, defaultKm,
+                              nullptr, 0, 0, 0, 0, 0, 0, nullptr, nullptr,
+                              nullptr, 0);
+    via::Protocol proto(pc, transport);
+    assert(proto.begin(0));
+
+    via::Pin rp[2] = {100, 101}, cp[3] = {200, 201, 202};
+    uint32_t raw[2] = {0,0}, cnd[2] = {0,0}, stb[2] = {0,0}, chg[2] = {0,0};
+    FakeMatrixIO io;
+    via::MatrixConfig mc = {kRows, kCols, rp, cp, via::kColToRow, 30, 0,
+                            raw, cnd, stb, chg};
+    via::Matrix matrix(mc, io);
+    assert(matrix.begin());
+
+    FakeKeyboardHID hid;
+    uint16_t ac[6] = {0};
+
+    via::Keyboard keyboard(via::KeyboardConfig{kRows, kCols}, matrix, proto, hid, ac);
+    assert(keyboard.begin());
+
+    io.keyMap[100 & 0x1F] = (1U << 0); // press A (0x04)
+    matrix.task(0);
+    keyboard.task(0);
+    assert(ac[0] == 0x0004);
+    assert(hid.lastReport.keys[0] == 0x04);
+
+    proto.setKeycode(0, 0, 0, 0x0005); // remap to B while held
+    assert(ac[0] == 0x0004); // activeCodes still holds original
+
+    io.keyMap[100 & 0x1F] = 0; // release
+    matrix.task(100);
+    keyboard.task(100);
+    assert(ac[0] == 0x0000);
+    assert(hid.lastReport.keys[0] == 0); // empty report (original usage removed)
+    assert(hid.lastReport.modifiers == 0);
+  }
+
+  // Test 4: layer MO — layer press processed first, remaining key resolves on new layer
+  {
+    uint16_t km[12]; // 2 layers, 2x3
+    km[0 * kCols + 0] = 0x5201; // layer 0 (0,0) = MO(1)
+    km[0 * kCols + 1] = 0x0005; // layer 0 (0,1) = B
+    km[0 * kCols + 2] = 0x0006; // layer 0 (0,2) = C
+    km[1 * kCols + 0] = 0x0007; // layer 0 (1,0) = D
+    km[1 * kCols + 1] = 0x0008; // layer 0 (1,1) = E
+    km[1 * kCols + 2] = 0x0009; // layer 0 (1,2) = F
+    km[6 + 0] = 0x000B;         // layer 1 (0,0) = K
+    km[6 + 1] = 0x000C;         // layer 1 (0,1) = L
+    km[6 + 2] = 0x000D;         // layer 1 (0,2) = M
+    km[6 + 3] = 0x000E;         // layer 1 (1,0) = N
+    km[6 + 4] = 0x000F;         // layer 1 (1,1) = O
+    km[6 + 5] = 0x0010;         // layer 1 (1,2) = P
+
+    via::Config pc(kRows, kCols, 2, km, km,
+                              nullptr, 0, 0, 0, 0, 0, 0, nullptr, nullptr,
+                              nullptr, 0);
+    via::Protocol proto(pc, transport);
+    assert(proto.begin(0));
+
+    via::Pin rp[2] = {100, 101}, cp[3] = {200, 201, 202};
+    uint32_t raw[2] = {0,0}, cnd[2] = {0,0}, stb[2] = {0,0}, chg[2] = {0,0};
+    FakeMatrixIO io;
+    via::MatrixConfig mc = {kRows, kCols, rp, cp, via::kColToRow, 30, 0,
+                            raw, cnd, stb, chg};
+    via::Matrix matrix(mc, io);
+    assert(matrix.begin());
+
+    FakeKeyboardHID hid;
+    uint16_t ac[6] = {0};
+
+    via::Keyboard keyboard(via::KeyboardConfig{kRows, kCols}, matrix, proto, hid, ac);
+    assert(keyboard.begin());
+
+    io.keyMap[100 & 0x1F] = (1U << 0) | (1U << 1); // press col0 (MO) + col1 (B)
+    matrix.task(0);
+    keyboard.task(0);
+    assert((ac[0] & 0xFF00) == 0x5200); // stored as layer action
+    assert(ac[1] == 0x000C);            // resolved on layer 1 (0,1) = L
+    assert(hid.lastReport.keys[0] == 0x0C);
+
+    io.keyMap[100 & 0x1F] = 0; // release both
+    matrix.task(100);
+    keyboard.task(100);
+    assert(ac[0] == 0x0000);
+    assert(ac[1] == 0x0000);
+    assert(hid.lastReport.keys[0] == 0);
+    assert(hid.lastReport.modifiers == 0);
+  }
+
+  // Test 5: six-key rollover — 7 keys produce ErrorRollOver
+  {
+    const uint8_t R = 2, C = 6;
+    uint16_t km[12];
+    for (int i = 0; i < 12; ++i) km[i] = 0x0004 + i;
+    via::Config pc(R, C, 1, km, km, nullptr, 0, 0, 0, 0, 0,
+                             0, nullptr, nullptr, nullptr, 0);
+    via::Protocol proto(pc, transport);
+    assert(proto.begin(0));
+
+    via::Pin rp[2] = {100, 101}, cp[6] = {200, 201, 202, 203, 204, 205};
+    uint32_t raw[2] = {0,0}, cnd[2] = {0,0}, stb[2] = {0,0}, chg[2] = {0,0};
+    FakeMatrixIO io;
+    via::MatrixConfig mc = {R, C, rp, cp, via::kColToRow, 30, 0,
+                            raw, cnd, stb, chg};
+    via::Matrix matrix(mc, io);
+    assert(matrix.begin());
+
+    FakeKeyboardHID hid;
+    uint16_t ac[12] = {0};
+
+    via::Keyboard keyboard(via::KeyboardConfig{R, C}, matrix, proto, hid, ac);
+    assert(keyboard.begin());
+
+    io.keyMap[100 & 0x1F] = 0x3F; // 6 keys on row0
+    io.keyMap[101 & 0x1F] = 0x01; // 1 key on row1 = 7 total
+    matrix.task(0);
+    keyboard.task(0);
+    for (int i = 0; i < 6; ++i) assert(hid.lastReport.keys[i] == 0x01);
+  }
+
+  // Test 6: stableRow passthrough
+  {
+    via::Pin rp[2] = {100, 101}, cp[2] = {200, 201};
+    uint32_t raw[2] = {0,0}, cnd[2] = {0,0}, stb[2] = {0,0}, chg[2] = {0,0};
+    FakeMatrixIO io;
+    io.keyMap[100 & 0x1F] = 0x02;
+    via::MatrixConfig mc = {kRows, 2, rp, cp, via::kColToRow, 30, 0,
+                            raw, cnd, stb, chg};
+    via::Matrix matrix(mc, io);
+    assert(matrix.begin());
+
+    uint16_t km[4] = {0x0004, 0x0005, 0x0006, 0x0007};
+    via::Config pc(kRows, 2, 1, km, km, nullptr, 0, 0, 0, 0, 0,
+                             0, nullptr, nullptr, nullptr, 0);
+    via::Protocol proto(pc, transport);
+    assert(proto.begin(0));
+
+    FakeKeyboardHID hid;
+    uint16_t ac[4] = {0};
+    via::Keyboard keyboard(via::KeyboardConfig{kRows, 2}, matrix, proto, hid, ac);
+    assert(keyboard.begin());
+
+    matrix.task(0);
+    assert(keyboard.stableRow(0) == 0x02);
+    assert(keyboard.stableRow(1) == 0);
   }
 
   return 0;

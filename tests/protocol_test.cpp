@@ -457,6 +457,47 @@ void assertLoadBufferAliasesRejectedBeforeStorageAccess() {
   }
 }
 
+void assertRequiredLoadBufferSizeAndMigrationGuards() {
+  uint16_t keymap[2] = {};
+  const uint16_t defaults[2] = {};
+  uint16_t encoderMap[2] = {};
+  const uint16_t defaultEncoderMap[2] = {};
+  uint8_t macros[3] = {};
+  via::MemoryTransport transport;
+  RecordingStorage storage;
+  StoredCustomValue customValue(0);
+  via::Config config = {1, 2, 1, keymap, defaults, macros, sizeof(macros),
+                        1, 0, 0, 0, 1, encoderMap, defaultEncoderMap};
+  via::Protocol keyboard(config, transport, &storage, &customValue);
+
+  assert(keyboard.requiredLoadBufferSize() == 16);
+  assert(!keyboard.begin(0));
+  assert(storage.accesses == 0);
+  assert(!keyboard.load());
+  assert(storage.accesses == 0);
+
+  uint8_t undersized[15];
+  config.loadBuffer = undersized;
+  config.loadBufferBytes = sizeof(undersized);
+  via::Protocol undersizedKeyboard(config, transport, &storage, &customValue);
+  assert(!undersizedKeyboard.begin(0));
+  assert(storage.accesses == 0);
+  assert(!undersizedKeyboard.load());
+  assert(storage.accesses == 0);
+}
+
+void assertTenFieldConfigWithoutStorageBegins() {
+  uint16_t keymap[1] = {};
+  const uint16_t defaults[1] = {};
+  uint8_t macros[1] = {};
+  via::MemoryTransport transport;
+  via::Config config = {1, 1, 1, keymap, defaults, macros, sizeof(macros),
+                        1, 0x01020304UL, 100};
+  via::Protocol keyboard(config, transport);
+
+  assert(keyboard.begin(0));
+}
+
 void assertCorruptLoadDoesNotMutateActiveState() {
   uint16_t keymap[2] = {0x1001, 0x1002};
   const uint16_t defaults[2] = {0x1001, 0x1002};
@@ -685,6 +726,8 @@ int main() {
   assertCorruptLoadDoesNotMutateActiveState();
   assertOversizedRecordRejectedBeforeStorageAccess();
   assertLoadBufferAliasesRejectedBeforeStorageAccess();
+  assertRequiredLoadBufferSizeAndMigrationGuards();
+  assertTenFieldConfigWithoutStorageBegins();
   assertCustomLoadRejectionDoesNotMutateActiveState();
   assertSecondPassFailureDoesNotMutateActiveState();
   assertBulkBoundsAndEmptyWrites();

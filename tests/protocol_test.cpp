@@ -420,6 +420,43 @@ void assertOversizedRecordRejectedBeforeStorageAccess() {
   assert(storage.accesses == 0);
 }
 
+void assertLoadBufferAliasesRejectedBeforeStorageAccess() {
+  uint16_t keymap[1];
+  const uint16_t defaults[1] = {0x1001};
+  uint16_t encoderMap[2];
+  const uint16_t defaultEncoderMap[2] = {0x2001, 0x2002};
+  uint8_t macros[4];
+  via::MemoryTransport transport;
+  RecordingStorage storage;
+  uint8_t* aliases[] = {reinterpret_cast<uint8_t*>(keymap),
+                        reinterpret_cast<uint8_t*>(encoderMap), macros};
+
+  for (uint8_t i = 0; i < sizeof(aliases) / sizeof(aliases[0]); ++i) {
+    keymap[0] = 0xA001;
+    encoderMap[0] = 0xB001;
+    encoderMap[1] = 0xB002;
+    memset(macros, 0xC1, sizeof(macros));
+    via::Config config = {1, 1, 1, keymap, defaults, macros, sizeof(macros),
+                          1, 0, 0, 0, 1, encoderMap, defaultEncoderMap};
+    config.loadBuffer = aliases[i];
+    config.loadBufferBytes = 14;
+    via::Protocol keyboard(config, transport, &storage);
+
+    assert(!keyboard.begin(0));
+    assert(storage.accesses == 0);
+    assert(keymap[0] == 0xA001);
+    assert(encoderMap[0] == 0xB001 && encoderMap[1] == 0xB002);
+    assert(macros[0] == 0xC1 && macros[3] == 0xC1);
+
+    storage.reset();
+    assert(!keyboard.load());
+    assert(storage.accesses == 0);
+    assert(keymap[0] == 0xA001);
+    assert(encoderMap[0] == 0xB001 && encoderMap[1] == 0xB002);
+    assert(macros[0] == 0xC1 && macros[3] == 0xC1);
+  }
+}
+
 void assertCorruptLoadDoesNotMutateActiveState() {
   uint16_t keymap[2] = {0x1001, 0x1002};
   const uint16_t defaults[2] = {0x1001, 0x1002};
@@ -647,6 +684,7 @@ int main() {
   assertOversizedPayloadRejectedBeforeStorageAccess();
   assertCorruptLoadDoesNotMutateActiveState();
   assertOversizedRecordRejectedBeforeStorageAccess();
+  assertLoadBufferAliasesRejectedBeforeStorageAccess();
   assertCustomLoadRejectionDoesNotMutateActiveState();
   assertSecondPassFailureDoesNotMutateActiveState();
   assertBulkBoundsAndEmptyWrites();

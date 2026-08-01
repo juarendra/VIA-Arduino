@@ -45,7 +45,8 @@ class Callbacks {
  public:
   virtual ~Callbacks() {}
   virtual uint32_t matrixRow(uint8_t row) const { (void)row; return 0; }
-  virtual void deviceIndication(uint8_t value) { (void)value; }
+  virtual void deviceIndication(bool enabled) { (void)enabled; }
+  virtual void deviceIndication(uint8_t value) { deviceIndication(value != 0); }
   virtual void layoutOptionsChanged(uint32_t value) { (void)value; }
   virtual void changed() {}
   virtual void bootloaderJump() {}

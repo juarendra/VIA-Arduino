@@ -219,7 +219,8 @@ bool Protocol::process(uint8_t packet[kPacketSize], uint32_t nowMs) {
     }
     case 0x15:  // dynamic keymap set encoder
       if (!setEncoderKeycode(packet[1], packet[2], packet[3],
-                             static_cast<uint16_t>(packet[4] << 8 | packet[5]))) {
+                             static_cast<uint16_t>(
+                                 static_cast<uint16_t>(packet[4]) << 8 | packet[5]))) {
         packet[0] = 0xFF;
       } else {
         markDirty(nowMs);

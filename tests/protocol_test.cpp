@@ -55,7 +55,8 @@ class SecurityCallbacks : public via::Callbacks {
 class FailFirstTransport : public via::Transport {
  public:
   FailFirstTransport()
-      : requestCount(0), delivered(0), receiveCalls(0), sendCalls(0) {
+      : requestCount(0), delivered(0), receiveCalls(0), sendCalls(0),
+        completionCalls(0) {
     memset(requests, 0, sizeof(requests));
     memset(sent, 0, sizeof(sent));
   }
@@ -71,6 +72,10 @@ class FailFirstTransport : public via::Transport {
     ++sendCalls;
     return sendCalls != 1;
   }
+  bool sendComplete() override {
+    ++completionCalls;
+    return true;
+  }
   void queue(const uint8_t packet[via::kPacketSize]) {
     assert(requestCount < 2);
     memcpy(requests[requestCount++], packet, via::kPacketSize);
@@ -82,6 +87,113 @@ class FailFirstTransport : public via::Transport {
   uint8_t delivered;
   uint8_t receiveCalls;
   uint8_t sendCalls;
+  uint8_t completionCalls;
+};
+
+class AsyncTransport : public via::Transport {
+ public:
+  AsyncTransport()
+      : requestReady(false), complete(false), receiveCalls(0), sendCalls(0),
+        completionCalls(0) {
+    memset(request, 0, sizeof(request));
+    memset(sent, 0, sizeof(sent));
+  }
+
+  bool receive(uint8_t packet[via::kPacketSize]) override {
+    ++receiveCalls;
+    if (!requestReady) return false;
+    memcpy(packet, request, via::kPacketSize);
+    requestReady = false;
+    return true;
+  }
+  bool send(const uint8_t packet[via::kPacketSize]) override {
+    ++sendCalls;
+    memcpy(sent, packet, via::kPacketSize);
+    return true;
+  }
+  bool sendComplete() override {
+    ++completionCalls;
+    return complete;
+  }
+  void queue(const uint8_t packet[via::kPacketSize]) {
+    memcpy(request, packet, via::kPacketSize);
+    requestReady = true;
+  }
+
+  uint8_t request[via::kPacketSize];
+  uint8_t sent[via::kPacketSize];
+  bool requestReady;
+  bool complete;
+  uint8_t receiveCalls;
+  uint8_t sendCalls;
+  uint8_t completionCalls;
+};
+
+struct EventLog {
+  EventLog() : count(0) { memset(events, 0, sizeof(events)); }
+  void add(char event) { events[count++] = event; }
+
+  char events[8];
+  uint8_t count;
+};
+
+class EventStorage : public via::Storage {
+ public:
+  explicit EventStorage(EventLog& log) : log_(log) {}
+
+  size_t capacity() const override { return sizeof(bytes); }
+  bool read(size_t, uint8_t*, size_t) override { return false; }
+  bool write(size_t, const uint8_t*, size_t) override { return true; }
+  bool commit() override {
+    log_.add('c');
+    return true;
+  }
+  bool erase() override { return true; }
+
+  uint8_t bytes[64];
+
+ private:
+  EventLog& log_;
+};
+
+class EventTransport : public via::Transport {
+ public:
+  explicit EventTransport(EventLog& log) : log_(log), requestReady_(false) {
+    memset(request_, 0, sizeof(request_));
+  }
+
+  bool receive(uint8_t packet[via::kPacketSize]) override {
+    if (!requestReady_) return false;
+    memcpy(packet, request_, via::kPacketSize);
+    requestReady_ = false;
+    return true;
+  }
+  bool send(const uint8_t[via::kPacketSize]) override {
+    log_.add('s');
+    return true;
+  }
+  bool sendComplete() override {
+    log_.add('d');
+    return true;
+  }
+  void queue(const uint8_t packet[via::kPacketSize]) {
+    memcpy(request_, packet, via::kPacketSize);
+    requestReady_ = true;
+  }
+
+ private:
+  EventLog& log_;
+  uint8_t request_[via::kPacketSize];
+  bool requestReady_;
+};
+
+class EventCallbacks : public via::Callbacks {
+ public:
+  explicit EventCallbacks(EventLog& log) : log_(log) {}
+  void bootloaderJump() override { log_.add('j'); }
+
+ private:
+  EventLog& log_;
 };
 
 class LegacyIndicationCallbacks : public via::Callbacks {
@@ -306,6 +418,14 @@ class StoredCustomValue : public via::CustomValue {
  private:
   bool changingSave_;
   bool rejectState_;
+};
+
+class FailingSerializationCustomValue : public via::CustomValue {
+ public:
+  bool set(uint8_t[via::kPacketSize]) override { return true; }
+  bool get(uint8_t[via::kPacketSize]) override { return true; }
+  size_t stateSize() const override { return 1; }
+  bool saveState(uint8_t*, size_t) const override { return false; }
 };
 
 void assertMatrixPacking(uint8_t columns, uint32_t rowMask,
@@ -1254,15 +1374,198 @@ void assertBootloaderWaitsForSuccessfulSend() {
   transport.queue(request);
   keyboard.task(1);
   assert(transport.sendCalls == 1);
+  assert(transport.completionCalls == 0);
   assert(callbacks.bootloaderCalls == 0);
 
   keyboard.task(2);
   assert(transport.receiveCalls == 1);
   assert(transport.sendCalls == 2);
+  assert(transport.completionCalls == 1);
   assert(callbacks.bootloaderCalls == 1);
 
   keyboard.task(3);
+  assert(transport.completionCalls == 1);
   assert(callbacks.bootloaderCalls == 1);
+}
+
+void assertBootloaderWaitsForExplicitCompletion() {
+  uint16_t keymap[1] = {};
+  const uint16_t defaults[1] = {};
+  AsyncTransport transport;
+  SecurityCallbacks callbacks;
+  via::Config config = {1, 1, 1, keymap, defaults};
+  config.bootloaderEnabled = true;
+  via::Protocol keyboard(config, transport, nullptr, nullptr, &callbacks);
+  assert(keyboard.begin(0));
+
+  const uint8_t request[via::kPacketSize] = {0x0B};
+  transport.queue(request);
+  keyboard.task(1);
+  assert(transport.sendCalls == 1 && transport.completionCalls == 1);
+  assert(callbacks.bootloaderCalls == 0);
+
+  keyboard.task(2);
+  assert(transport.receiveCalls == 1 && transport.sendCalls == 1);
+  assert(transport.completionCalls == 2);
+  assert(callbacks.bootloaderCalls == 0);
+
+  transport.complete = true;
+  keyboard.task(3);
+  assert(transport.sendCalls == 1 && transport.completionCalls == 3);
+  assert(callbacks.bootloaderCalls == 1);
+
+  keyboard.task(4);
+  assert(transport.completionCalls == 3);
+  assert(callbacks.bootloaderCalls == 1);
+}
+
+void assertSynchronousBootloaderCompletionIsImmediate() {
+  uint16_t keymap[1] = {};
+  const uint16_t defaults[1] = {};
+  via::MemoryTransport transport;
+  SecurityCallbacks callbacks;
+  via::Config config = {1, 1, 1, keymap, defaults};
+  config.bootloaderEnabled = true;
+  via::Protocol keyboard(config, transport, nullptr, nullptr, &callbacks);
+  assert(keyboard.begin(0));
+
+  const uint8_t request[via::kPacketSize] = {0x0B};
+  transport.inject(request);
+  keyboard.task(1);
+  assert(callbacks.bootloaderCalls == 1);
+  keyboard.task(2);
+  assert(callbacks.bootloaderCalls == 1);
+}
+
+void assertBootloaderRequiresPolicyAndCallback() {
+  uint16_t keymap[1] = {};
+  const uint16_t defaults[1] = {};
+  via::MemoryTransport transport;
+  SecurityCallbacks callbacks;
+  uint8_t packet[via::kPacketSize] = {0x0B};
+
+  via::Config disabledConfig = {1, 1, 1, keymap, defaults};
+  via::Protocol disabled(disabledConfig, transport, nullptr, nullptr, &callbacks);
+  assert(disabled.begin(0));
+  assert(!disabled.process(packet, 0) && packet[0] == 0xFF);
+
+  via::Config noCallbackConfig = {1, 1, 1, keymap, defaults};
+  noCallbackConfig.bootloaderEnabled = true;
+  via::Protocol noCallback(noCallbackConfig, transport);
+  assert(noCallback.begin(0));
+  packet[0] = 0x0B;
+  assert(!noCallback.process(packet, 0) && packet[0] == 0xFF);
+}
+
+void assertDirtyBootloaderSaveFailuresReject() {
+  const ResetFailureStorage::Failure failures[] = {
+      ResetFailureStorage::kWrite, ResetFailureStorage::kCommit};
+  const uint16_t defaults[1] = {};
+
+  for (uint8_t i = 0; i < sizeof(failures) / sizeof(failures[0]); ++i) {
+    uint16_t keymap[1] = {};
+    uint8_t loadBuffer[6];
+    via::MemoryTransport transport;
+    ResetFailureStorage storage;
+    SecurityCallbacks callbacks;
+    via::Config config = {1, 1, 1, keymap, defaults};
+    config.loadBuffer = loadBuffer;
+    config.loadBufferBytes = sizeof(loadBuffer);
+    config.bootloaderEnabled = true;
+    via::Protocol keyboard(config, transport, &storage, nullptr, &callbacks);
+    assert(keyboard.begin(0));
+    uint8_t packet[via::kPacketSize] = {0x05, 0, 0, 0, 0x12, 0x34};
+    assert(keyboard.process(packet, 0));
+    storage.failure = failures[i];
+    packet[0] = 0x0B;
+    assert(!keyboard.process(packet, 0));
+    assert(packet[0] == 0xFF && keyboard.dirty());
+    assert(callbacks.bootloaderCalls == 0);
+  }
+
+  uint16_t keymap[1] = {};
+  via::MemoryTransport transport;
+  SecurityCallbacks callbacks;
+  via::Config config = {1, 1, 1, keymap, defaults};
+  config.bootloaderEnabled = true;
+  via::Protocol noStorage(config, transport, nullptr, nullptr, &callbacks);
+  assert(noStorage.begin(0));
+  uint8_t packet[via::kPacketSize] = {0x05, 0, 0, 0, 0x12, 0x34};
+  assert(noStorage.process(packet, 0));
+  packet[0] = 0x0B;
+  assert(!noStorage.process(packet, 0));
+  assert(packet[0] == 0xFF && noStorage.dirty());
+
+  uint8_t loadBuffer[7];
+  ResetFailureStorage storage;
+  FailingSerializationCustomValue customValue;
+  via::Config customConfig = {1, 1, 1, keymap, defaults};
+  customConfig.loadBuffer = loadBuffer;
+  customConfig.loadBufferBytes = sizeof(loadBuffer);
+  customConfig.bootloaderEnabled = true;
+  via::Protocol custom(customConfig, transport, &storage, &customValue,
+                       &callbacks);
+  assert(custom.begin(0));
+  packet[0] = 0x05;
+  assert(custom.process(packet, 0));
+  packet[0] = 0x0B;
+  assert(!custom.process(packet, 0));
+  assert(packet[0] == 0xFF && custom.dirty());
+  assert(storage.writes == 0 && storage.commits == 0);
+}
+
+void assertDirectBootloaderProcessSavesButNeverJumps() {
+  uint16_t keymap[1] = {};
+  const uint16_t defaults[1] = {};
+  uint8_t loadBuffer[6];
+  via::MemoryTransport transport;
+  RecordingStorage storage;
+  SecurityCallbacks callbacks;
+  via::Config config = {1, 1, 1, keymap, defaults};
+  config.loadBuffer = loadBuffer;
+  config.loadBufferBytes = sizeof(loadBuffer);
+  config.bootloaderEnabled = true;
+  via::Protocol keyboard(config, transport, &storage, nullptr, &callbacks);
+  assert(keyboard.begin(0));
+  storage.reset();
+
+  uint8_t packet[via::kPacketSize] = {0x05, 0, 0, 0, 0x12, 0x34};
+  assert(keyboard.process(packet, 0));
+  packet[0] = 0x0B;
+  assert(keyboard.process(packet, 0));
+  assert(!keyboard.dirty() && storage.commits == 1);
+  assert(callbacks.bootloaderCalls == 0);
+
+  via::Protocol clean(config, transport, nullptr, nullptr, &callbacks);
+  assert(clean.begin(0));
+  packet[0] = 0x0B;
+  assert(clean.process(packet, 0));
+  assert(callbacks.bootloaderCalls == 0);
+}
+
+void assertBootloaderEventOrder() {
+  uint16_t keymap[1] = {};
+  const uint16_t defaults[1] = {};
+  uint8_t loadBuffer[6];
+  EventLog log;
+  EventTransport transport(log);
+  EventStorage storage(log);
+  EventCallbacks callbacks(log);
+  via::Config config = {1, 1, 1, keymap, defaults};
+  config.loadBuffer = loadBuffer;
+  config.loadBufferBytes = sizeof(loadBuffer);
+  config.bootloaderEnabled = true;
+  via::Protocol keyboard(config, transport, &storage, nullptr, &callbacks);
+  assert(keyboard.begin(0));
+
+  uint8_t packet[via::kPacketSize] = {0x05, 0, 0, 0, 0x12, 0x34};
+  assert(keyboard.process(packet, 0));
+  const uint8_t boot[via::kPacketSize] = {0x0B};
+  transport.queue(boot);
+  keyboard.task(1);
+  assert(log.count == 4);
+  assert(log.events[0] == 'c' && log.events[1] == 's');
+  assert(log.events[2] == 'd' && log.events[3] == 'j');
 }
 
 void assertCustomResponseCannotTriggerBootloader() {
@@ -1321,6 +1624,12 @@ int main() {
   assertSensitiveCommandsAreOptIn();
   assertFailedSendRetriesWithoutReprocessing();
   assertBootloaderWaitsForSuccessfulSend();
+  assertBootloaderWaitsForExplicitCompletion();
+  assertSynchronousBootloaderCompletionIsImmediate();
+  assertBootloaderRequiresPolicyAndCallback();
+  assertDirtyBootloaderSaveFailuresReject();
+  assertDirectBootloaderProcessSavesButNeverJumps();
+  assertBootloaderEventOrder();
   assertCustomResponseCannotTriggerBootloader();
 
   uint16_t keymap[4] = {0x0004, 0x0005, 0x0014, 0x001A};

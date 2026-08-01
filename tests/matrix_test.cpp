@@ -55,5 +55,22 @@ int main() {
   assert(matrix.stableRows() == 0);
   assert(matrix.changedRows() == 0);
 
+  {
+    via::Pin rowPins[2] = {100, 101};
+    via::Pin colPins[3] = {200, 201, 202};
+    uint32_t rawRows[2] = {0, 0};
+    uint32_t candidate[2] = {0, 0};
+    uint32_t stable[2] = {0, 0};
+    uint32_t changed[2] = {0, 0};
+    FakeMatrixIO scanIO;
+    scanIO.pinStates[200] = false;
+    via::MatrixConfig scanCfg = {2, 3, rowPins, colPins, via::kColToRow, 30, 5,
+                                 rawRows, candidate, stable, changed};
+    via::Matrix scanMatrix(scanCfg, scanIO);
+    assert(scanMatrix.begin());
+    scanMatrix.task(0);
+    assert(scanMatrix.rawRow(0) == 0x01);
+  }
+
   return 0;
 }

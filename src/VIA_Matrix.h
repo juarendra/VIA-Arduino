@@ -40,8 +40,12 @@ class Matrix {
 
   void task(uint32_t) {}
 
+  uint32_t rawRow(uint8_t r) const { return config_.rawRows[r]; }
   uint32_t stableRows() const { return 0; }
   uint32_t changedRows() const { return 0; }
+
+  uint8_t rows() const { return config_.rows; }
+  uint8_t columns() const { return config_.columns; }
 
  private:
   const MatrixConfig& config_;

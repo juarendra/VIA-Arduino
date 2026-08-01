@@ -157,5 +157,148 @@ int main() {
     assert(!via::extractLayerAction(0x004, action, layer));
   }
 
+  // --- LayerState tests ---
+
+  // Helper: build keycode for layer action
+  auto mkLayer = [](uint8_t action, uint8_t layer) -> uint16_t {
+    return 0x5200 | ((action & 0x03) << 5) | (layer & 0x1F);
+  };
+
+  // MO press/release
+  {
+    via::LayerState ls;
+    ls.begin(2);
+    uint16_t km[8] = {   // 2 layers, 2 rows, 2 cols
+      0x0004, 0x0005,    // layer 0: A, B
+      0x0006, 0x0007,    //          C, D
+      0x0008, 0x0009,    // layer 1: E, F
+      0x000A, 0x000B     //          G, H
+    };
+    assert(ls.resolve(0, km, 0, 0, 2, 2) == 0x0004); // default layer 0
+    ls.applyLayerPress(1, mkLayer(0, 1)); // MO(1)
+    assert(ls.resolve(0, km, 0, 0, 2, 2) == 0x0008); // layer 1 E at (0,0)
+    ls.applyLayerRelease(1, mkLayer(0, 1));
+    assert(ls.resolve(0, km, 0, 0, 2, 2) == 0x0004); // back to layer 0
+  }
+
+  // TG toggle
+  {
+    via::LayerState ls;
+    ls.begin(2);
+    uint16_t km[8] = {
+      0x0004, 0x0005,
+      0x0006, 0x0007,
+      0x0008, 0x0009,
+      0x000A, 0x000B
+    };
+    ls.applyLayerPress(1, mkLayer(1, 1)); // TG(1) press
+    ls.applyLayerRelease(1, mkLayer(1, 1)); // TG release: no-op
+    assert(ls.resolve(0, km, 0, 0, 2, 2) == 0x0008); // still layer 1
+    ls.applyLayerPress(1, mkLayer(1, 1)); // TG(1) press again
+    assert(ls.resolve(0, km, 0, 0, 2, 2) == 0x0004); // toggled off
+  }
+
+  // TO clears transients, activates one
+  {
+    via::LayerState ls;
+    ls.begin(3);
+    uint16_t km[12] = {
+      0x0004, 0x0005,
+      0x0006, 0x0007,
+      0x0008, 0x0009,
+      0x000A, 0x000B,
+      0x000C, 0x000D,
+      0x000E, 0x000F
+    };
+    ls.applyLayerPress(1, mkLayer(0, 1)); // MO(1)
+    ls.applyLayerPress(2, mkLayer(2, 2)); // TO(2)
+    assert((ls.activeLayerMask() & (1U << 1)) == 0); // layer 1 cleared
+    assert((ls.activeLayerMask() & (1U << 2)) != 0); // layer 2 active
+    assert(ls.resolve(0, km, 0, 0, 2, 2) == 0x000C); // layer 2 key at (0,0)
+  }
+
+  // DF changes default
+  {
+    via::LayerState ls;
+    ls.begin(2);
+    ls.applyLayerPress(1, mkLayer(3, 1)); // DF(1)
+    assert(ls.defaultLayer() == 1);
+  }
+
+  // Duplicate MO: ref count prevents premature removal
+  {
+    via::LayerState ls;
+    ls.begin(2);
+    uint16_t km[8] = {
+      0x0004, 0x0005,
+      0x0006, 0x0007,
+      0x0008, 0x0009,
+      0x000A, 0x000B
+    };
+    ls.applyLayerPress(1, mkLayer(0, 1)); // MO(1) first press
+    ls.applyLayerPress(1, mkLayer(0, 1)); // MO(1) second press (duplicate)
+    ls.applyLayerRelease(1, mkLayer(0, 1)); // release one
+    assert(ls.resolve(0, km, 0, 0, 2, 2) == 0x0008); // still layer 1
+    ls.applyLayerRelease(1, mkLayer(0, 1)); // release second
+    assert(ls.resolve(0, km, 0, 0, 2, 2) == 0x0004); // back to layer 0
+  }
+
+  // Highest active layer wins
+  {
+    via::LayerState ls;
+    ls.begin(3);
+    // layer 0: A, layer 1: KC_TRNS, layer 2: X
+    uint16_t km[12] = {
+      0x0004, 0x0005,
+      0x0006, 0x0007,
+      0x0001, 0x0005,    // layer 1 (0,0)=TRNS
+      0x0006, 0x0007,
+      0x0008, 0x0005,    // layer 2 (0,0)=E
+      0x0006, 0x0007
+    };
+    ls.applyLayerPress(1, mkLayer(0, 1)); // MO(1)
+    ls.applyLayerPress(2, mkLayer(0, 2)); // MO(2)
+    assert(ls.resolve(0, km, 0, 0, 2, 2) == 0x0008); // highest=layer 2
+  }
+
+  // KC_TRNS falls through
+  {
+    via::LayerState ls;
+    ls.begin(2);
+    uint16_t km[8] = {
+      0x0004, 0x0005,
+      0x0006, 0x0007,
+      0x0001, 0x0005,    // layer 1 (0,0)=TRNS
+      0x0006, 0x0007
+    };
+    ls.applyLayerPress(1, mkLayer(0, 1)); // MO(1)
+    assert(ls.resolve(0, km, 0, 0, 2, 2) == 0x0004); // falls through to layer 0
+  }
+
+  // KC_NO stops lookup
+  {
+    via::LayerState ls;
+    ls.begin(2);
+    uint16_t km[8] = {
+      0x0004, 0x0005,
+      0x0006, 0x0007,
+      0x0000, 0x0005,    // layer 1 (0,0)=NO
+      0x0006, 0x0007
+    };
+    ls.applyLayerPress(1, mkLayer(0, 1)); // MO(1)
+    assert(ls.resolve(0, km, 0, 0, 2, 2) == 0x0000); // KC_NO stops
+  }
+
+  // Invalid layer target: no-op
+  {
+    via::LayerState ls;
+    ls.begin(2);
+    ls.applyLayerPress(5, mkLayer(0, 5)); // layer 5 invalid
+    assert(ls.activeLayerMask() == 0); // no change
+    ls.applyLayerPress(0, mkLayer(1, 0)); // TG(0) invalid (layer 0 always default)
+    // TG(0) is technically weird — but layer >= layerCount check catches 0 which IS valid
+    // Testing >= layerCount
+  }
+
   return 0;
 }

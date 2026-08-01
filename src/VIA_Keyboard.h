@@ -18,6 +18,71 @@ class KeyboardCallbacks {
   ~KeyboardCallbacks() = default;
 };
 
+class LayerState {
+ public:
+  void begin(uint8_t layerCount) { layerCount_ = layerCount; }
+  uint8_t layerCount() const { return layerCount_; }
+
+  void applyLayerPress(uint8_t /*sourceLayer*/, uint16_t keycode) {
+    uint8_t action, layer;
+    if (!extractLayerAction(keycode, action, layer)) return;
+    if (layer >= layerCount_) return;
+    switch (action) {
+      case 0:
+        refCounts_[layer]++;
+        transientMask_ |= (1UL << layer);
+        break;
+      case 1:
+        transientMask_ ^= (1UL << layer);
+        break;
+      case 2:
+        transientMask_ = (1UL << layer);
+        for (uint8_t i = 0; i < layerCount_; ++i) refCounts_[i] = 0;
+        break;
+      case 3:
+        defaultLayer_ = layer;
+        break;
+    }
+  }
+
+  void applyLayerRelease(uint8_t /*sourceLayer*/, uint16_t keycode) {
+    uint8_t action, layer;
+    if (!extractLayerAction(keycode, action, layer)) return;
+    if (layer >= layerCount_) return;
+    if (action == 0) {
+      if (refCounts_[layer] > 0) {
+        refCounts_[layer]--;
+        if (refCounts_[layer] == 0)
+          transientMask_ &= ~(1UL << layer);
+      }
+    }
+  }
+
+  uint16_t resolve(uint8_t defaultLayer, const uint16_t* keymap,
+                   uint8_t row, uint8_t col, uint8_t rows, uint8_t cols) const {
+    uint32_t mask = transientMask_;
+    for (int8_t i = 31; i >= 0; --i) {
+      if (mask & (1UL << i) && i < layerCount_) {
+        uint16_t code = keymap[i * rows * cols + row * cols + col];
+        if (code == 0x0000) return code;
+        if (code != 0x0001) return code;
+      }
+    }
+    if (defaultLayer < layerCount_)
+      return keymap[defaultLayer * rows * cols + row * cols + col];
+    return 0x0000;
+  }
+
+  uint32_t activeLayerMask() const { return transientMask_; }
+  uint8_t defaultLayer() const { return defaultLayer_; }
+
+ private:
+  uint32_t transientMask_ = 0;
+  uint8_t refCounts_[32] = {};
+  uint8_t layerCount_ = 0;
+  uint8_t defaultLayer_ = 0;
+};
+
 class KeyboardHID {
  public:
   virtual bool configured() const = 0;

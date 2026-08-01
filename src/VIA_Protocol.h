@@ -63,9 +63,12 @@ struct Config {
          uint8_t* macrosValue = nullptr, uint16_t macroBytesValue = 0,
          uint8_t macroCountValue = 0, uint32_t firmwareVersionValue = 0,
           uint32_t autoSaveMsValue = 0, uint32_t defaultLayoutOptionsValue = 0,
-          uint8_t encoderCountValue = 0, uint16_t* encoderMapValue = nullptr,
-          const uint16_t* defaultEncoderMapValue = nullptr,
-          uint8_t* loadBufferValue = nullptr, uint16_t loadBufferBytesValue = 0)
+           uint8_t encoderCountValue = 0, uint16_t* encoderMapValue = nullptr,
+           const uint16_t* defaultEncoderMapValue = nullptr,
+           uint8_t* loadBufferValue = nullptr, uint16_t loadBufferBytesValue = 0,
+           bool matrixStateEnabledValue = false,
+           bool eepromResetEnabledValue = false,
+           bool bootloaderEnabledValue = false)
       : rows(rowsValue),
         columns(columnsValue),
         layers(layersValue),
@@ -79,9 +82,12 @@ struct Config {
         defaultLayoutOptions(defaultLayoutOptionsValue),
         encoderCount(encoderCountValue),
         encoderMap(encoderMapValue),
-        defaultEncoderMap(defaultEncoderMapValue),
-        loadBuffer(loadBufferValue),
-        loadBufferBytes(loadBufferBytesValue) {}
+         defaultEncoderMap(defaultEncoderMapValue),
+         loadBuffer(loadBufferValue),
+         loadBufferBytes(loadBufferBytesValue),
+         matrixStateEnabled(matrixStateEnabledValue),
+         eepromResetEnabled(eepromResetEnabledValue),
+         bootloaderEnabled(bootloaderEnabledValue) {}
 
   uint8_t rows;
   uint8_t columns;
@@ -101,6 +107,9 @@ struct Config {
   // Protocol::requiredLoadBufferSize(), that does not overlap active state.
   uint8_t* loadBuffer;
   uint16_t loadBufferBytes;
+  bool matrixStateEnabled;
+  bool eepromResetEnabled;
+  bool bootloaderEnabled;
 };
 
 class Protocol {
@@ -110,6 +119,8 @@ class Protocol {
 
   bool begin(uint32_t nowMs = 0);
   void task(uint32_t nowMs);
+  // Direct processing cannot confirm delivery, so it never invokes
+  // bootloaderJump(); task() invokes it after the response sends successfully.
   bool process(uint8_t packet[kPacketSize], uint32_t nowMs);
 
   size_t requiredLoadBufferSize() const;
@@ -146,6 +157,8 @@ class Protocol {
   bool dirty_;
   uint32_t saveAt_;
   uint32_t layoutOptions_;
+  uint8_t pendingResponse_[kPacketSize];
+  bool responsePending_;
 };
 
 }  // namespace via

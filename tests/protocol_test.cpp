@@ -266,6 +266,7 @@ void assertMatrixPacking(uint8_t columns, uint32_t rowMask,
   via::MemoryTransport transport;
   FixedMatrixCallbacks callbacks(rowMask);
   via::Config config = {29, columns, 1, keymap, defaults, macros, 0, 0, 0, 0};
+  config.matrixStateEnabled = true;
   via::Protocol keyboard(config, transport, nullptr, nullptr, &callbacks);
   assert(keyboard.begin(0));
 
@@ -293,6 +294,7 @@ void assertMatrixRowOffsetDoesNotWrap() {
   via::MemoryTransport transport;
   FixedMatrixCallbacks callbacks(0xA5);
   via::Config config = {29, 1, 1, keymap, defaults, macros, 0, 0, 0, 0};
+  config.matrixStateEnabled = true;
   via::Protocol keyboard(config, transport, nullptr, nullptr, &callbacks);
   assert(keyboard.begin(0));
 

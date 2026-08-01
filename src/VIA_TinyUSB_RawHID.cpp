@@ -70,7 +70,10 @@ void RawHID::setReport(uint8_t reportId, hid_report_type_t reportType,
 
 void RawHID::receiveReport(uint8_t reportId, hid_report_type_t reportType,
                            uint8_t const* buffer, uint16_t length) {
-  if (reportId != 0 || reportType != HID_REPORT_TYPE_OUTPUT || length != kPacketSize) return;
+  if (reportId != 0 ||
+      (reportType != static_cast<hid_report_type_t>(0) &&
+       reportType != HID_REPORT_TYPE_OUTPUT) ||
+      length != kPacketSize || rxReady_) return;
   memcpy(rx_, buffer, kPacketSize);
   rxReady_ = true;
 }

@@ -44,7 +44,8 @@ Protocol::Protocol(const Config& config, Transport& transport, Storage* storage,
       callbacks_(callbacks),
       dirty_(false),
       saveAt_(0),
-      layoutOptions_(config.defaultLayoutOptions) {}
+      layoutOptions_(config.defaultLayoutOptions),
+      responsePending_(false) {}
 
 bool Protocol::begin(uint32_t nowMs) {
   size_t bytes;
@@ -65,10 +66,14 @@ bool Protocol::begin(uint32_t nowMs) {
 }
 
 void Protocol::task(uint32_t nowMs) {
-  uint8_t packet[kPacketSize];
-  if (transport_.receive(packet)) {
-    process(packet, nowMs);
-    transport_.send(packet);
+  if (!responsePending_ && transport_.receive(pendingResponse_)) {
+    process(pendingResponse_, nowMs);
+    responsePending_ = true;
+  }
+  if (responsePending_ && transport_.send(pendingResponse_)) {
+    const bool bootloader = pendingResponse_[0] == 0x0B;
+    responsePending_ = false;
+    if (bootloader && callbacks_) callbacks_->bootloaderJump();
   }
   if (dirty_ && static_cast<int32_t>(nowMs - saveAt_) >= 0) save();
 }
@@ -104,7 +109,8 @@ bool Protocol::process(uint8_t packet[kPacketSize], uint32_t nowMs) {
           uint8_t outIndex = 3;
           for (uint8_t i = 0; i < maxRows; ++i) {
             const uint16_t row = static_cast<uint16_t>(startRow) + i;
-            const uint32_t rowData = (callbacks_ && row < config_.rows)
+            const uint32_t rowData = (config_.matrixStateEnabled && callbacks_ &&
+                                      row < config_.rows)
                                          ? callbacks_->matrixRow(static_cast<uint8_t>(row))
                                          : 0;
             for (uint8_t b = 0; b < bytesPerRow; ++b) {
@@ -174,10 +180,10 @@ bool Protocol::process(uint8_t packet[kPacketSize], uint32_t nowMs) {
       if (!customValue_ || !customValue_->save(packet) || !save()) packet[0] = 0xFF;
       break;
     case 0x0A:  // reset EEPROM
-      if (!factoryReset()) packet[0] = 0xFF;
+      if (!config_.eepromResetEnabled || !factoryReset()) packet[0] = 0xFF;
       break;
     case 0x0B:  // bootloader jump
-      if (callbacks_) callbacks_->bootloaderJump();
+      if (!config_.bootloaderEnabled) packet[0] = 0xFF;
       break;
     case 0x0C:  // get macro count
       packet[1] = config_.macroCount;

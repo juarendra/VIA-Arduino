@@ -312,7 +312,10 @@ uint32_t Protocol::stateCrc() const {
 }
 
 bool Protocol::load() {
-  if (!storage_ || storage_->capacity() < sizeof(StateHeader) + stateBytes()) return false;
+  if (!storage_ || (customValue_ && customValue_->stateSize() > kMaxCustomStateSize)) {
+    return false;
+  }
+  if (storage_->capacity() < sizeof(StateHeader) + stateBytes()) return false;
   StateHeader header;
   if (!storage_->read(0, reinterpret_cast<uint8_t*>(&header), sizeof(header)) ||
       header.magic != kStateMagic || header.version != kStateVersion ||
@@ -352,7 +355,9 @@ bool Protocol::load() {
 }
 
 bool Protocol::save() {
-  if (!storage_) return false;
+  if (!storage_ || (customValue_ && customValue_->stateSize() > kMaxCustomStateSize)) {
+    return false;
+  }
   return writeState();
 }
 

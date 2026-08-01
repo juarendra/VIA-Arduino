@@ -6,22 +6,21 @@ namespace {
 class FakeMatrixIO : public via::MatrixIO {
  public:
   FakeMatrixIO() : inputPullupCalls(0), driveLowCalls(0), releaseCalls(0),
-                    readCalls(0), delayMicrosecondsCalls(0), readValue(false) {
-    for (uint8_t i = 0; i < sizeof(pinStates); ++i) pinStates[i] = true;
+                    readCalls(0), delayMicrosecondsCalls(0), readValue(false),
+                    readPos(0), drivenIdx(0) {
+    for (uint8_t i = 0; i < sizeof(keyMap); ++i) keyMap[i] = 0;
   }
 
   void inputPullup(via::Pin) override { ++inputPullupCalls; }
   void driveLow(via::Pin pin) override {
     ++driveLowCalls;
-    pinStates[pin & 0x1F] = false;
+    drivenIdx = pin & 0x1F;
+    readPos = 0;
   }
-  void release(via::Pin pin) override {
-    ++releaseCalls;
-    pinStates[pin & 0x1F] = true;
-  }
-  bool read(via::Pin pin) override {
+  void release(via::Pin) override { ++releaseCalls; }
+  bool read(via::Pin) override {
     ++readCalls;
-    return pinStates[pin & 0x1F];
+    return !(keyMap[drivenIdx] & (1U << readPos++));
   }
   void delayMicroseconds(uint16_t us) override {
     ++delayMicrosecondsCalls;
@@ -35,7 +34,10 @@ class FakeMatrixIO : public via::MatrixIO {
   uint8_t delayMicrosecondsCalls;
   uint16_t lastDelayUs;
   bool readValue;
-  bool pinStates[32];
+  uint8_t keyMap[32];
+ private:
+  uint8_t readPos;
+  uint8_t drivenIdx;
 };
 
 }  // namespace
@@ -62,7 +64,7 @@ int main() {
     uint32_t stable[2] = {0, 0};
     uint32_t changed[2] = {0, 0};
     FakeMatrixIO scanIO;
-    scanIO.pinStates[200 & 0x1F] = false;
+    scanIO.keyMap[100 & 0x1F] = 0x01;
     via::MatrixConfig scanCfg = {2, 3, rowPins, colPins, via::kColToRow, 30, 5,
                                  rawRows, candidate, stable, changed};
     via::Matrix scanMatrix(scanCfg, scanIO);
@@ -80,13 +82,13 @@ int main() {
     uint32_t stable[2] = {0, 0};
     uint32_t changed[2] = {0, 0};
     FakeMatrixIO io2;
-    io2.pinStates[100 & 0x1F] = false;
+    io2.keyMap[202 & 0x1F] = 0x01;
     via::MatrixConfig cfg2 = {2, 3, rowPins, colPins, via::kRowToCol, 30, 5,
                               rawRows, candidate, stable, changed};
     via::Matrix matrix2(cfg2, io2);
     assert(matrix2.begin());
     matrix2.task(0);
-    assert(matrix2.rawRow(0) != 0);
+    assert(matrix2.rawRow(0) == (1U << 2));
   }
 
   return 0;

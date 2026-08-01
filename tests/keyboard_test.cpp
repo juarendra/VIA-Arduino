@@ -596,7 +596,7 @@ int main() {
     matrix.task(30);
     keyboard.task(30);
     // After sendComplete=true, report accepted. No changes → no more sends.
-    int callsAfterAccept = hid.sendCalls;
+    uint32_t callsAfterAccept = hid.sendCalls;
     matrix.task(40);
     keyboard.task(40);
     assert(hid.sendCalls == callsAfterAccept);

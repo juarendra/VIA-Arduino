@@ -118,7 +118,7 @@ class Keyboard {
  private:
   KeyboardReport buildReport() const;
 
-  const KeyboardConfig& config_;
+  const KeyboardConfig config_;
   Matrix& matrix_;
   Protocol& protocol_;
   KeyboardHID& hid_;

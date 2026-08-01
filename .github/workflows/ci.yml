@@ -23,7 +23,21 @@ jobs:
       - name: Build and run keyboard tests
         run: |
           g++ -std=c++11 -Wall -Wextra -Werror -Isrc \
-            tests/keyboard_test.cpp -o keyboard_test && ./keyboard_test
+            tests/keyboard_test.cpp src/VIA_Matrix.cpp src/VIA_Keyboard.cpp \
+            src/VIA_Protocol.cpp src/VIA_RGBLight.cpp -o keyboard_test && \
+            ./keyboard_test
+
+  keyboard-san:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run keyboard tests (ASan/UBSan)
+        run: |
+          g++ -std=c++11 -Wall -Wextra -Werror \
+            -fsanitize=address,undefined -fno-omit-frame-pointer -Isrc \
+            tests/keyboard_test.cpp src/VIA_Matrix.cpp src/VIA_Keyboard.cpp \
+            src/VIA_Protocol.cpp src/VIA_RGBLight.cpp -o keyboard_test_san && \
+            ./keyboard_test_san
 
   matrix:
     runs-on: ubuntu-latest

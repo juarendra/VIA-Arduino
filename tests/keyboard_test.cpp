@@ -1,7 +1,76 @@
 #include <assert.h>
 #include "VIA_Keycodes.h"
+#include "VIA_Keyboard.h"
+
+class FakeKeyboardHID : public via::KeyboardHID {
+ public:
+  bool _configured = true, _suspended = false, _wakeAllowed = false;
+  bool sendResult = true, completeResult = true;
+  uint32_t sendCalls = 0, completeCalls = 0, wakeCalls = 0;
+  via::KeyboardReport lastReport;
+  uint8_t hostLeds = 0;
+  bool configured() const override { return _configured; }
+  bool send(const via::KeyboardReport& r) override { sendCalls++; lastReport = r; return sendResult; }
+  bool sendComplete() override { completeCalls++; return completeResult; }
+  bool takeHostLeds(uint8_t& l) override { l = hostLeds; hostLeds = 0; return true; }
+  bool suspended() const override { return _suspended; }
+  bool remoteWakeupAllowed() const override { return _wakeAllowed; }
+  bool remoteWakeup() override { wakeCalls++; return true; }
+};
 
 int main() {
+  {
+    FakeKeyboardHID hid;
+    via::KeyboardReport r = {0x01, 0, {0x04, 0, 0, 0, 0, 0}};
+    assert(hid.send(r));
+    assert(hid.lastReport.modifiers == 0x01);
+    assert(hid.lastReport.keys[0] == 0x04);
+    assert(hid.sendCalls == 1);
+    assert(hid.configured());
+    assert(!hid.suspended());
+    assert(!hid.remoteWakeupAllowed());
+  }
+
+  {
+    FakeKeyboardHID hid;
+    uint8_t leds = 0xFF;
+    assert(hid.takeHostLeds(leds));
+    assert(leds == 0);
+  }
+
+  {
+    FakeKeyboardHID hid;
+    hid.hostLeds = 0x02;
+    uint8_t leds = 0;
+    assert(hid.takeHostLeds(leds));
+    assert(leds == 0x02);
+    assert(hid.hostLeds == 0);
+  }
+
+  {
+    FakeKeyboardHID hid;
+    assert(hid.remoteWakeup());
+    assert(hid.wakeCalls == 1);
+  }
+
+  {
+    FakeKeyboardHID hid;
+    hid.sendResult = false;
+    assert(!hid.send(via::KeyboardReport{}));
+  }
+
+  {
+    FakeKeyboardHID hid;
+    hid.completeResult = false;
+    assert(!hid.sendComplete());
+  }
+
+  {
+    FakeKeyboardHID hid;
+    hid._suspended = true;
+    assert(hid.suspended());
+  }
+
   assert(via::classifyKeycode(0x0000) == via::KeycodeType::kNone);
   assert(via::classifyKeycode(0x0001) == via::KeycodeType::kTransparent);
   assert(via::classifyKeycode(0x0004) == via::KeycodeType::kBasic);

@@ -37,12 +37,14 @@ Protocol::Protocol(const Config& config, Transport& transport, Storage* storage,
       layoutOptions_(config.defaultLayoutOptions) {}
 
 bool Protocol::begin(uint32_t nowMs) {
+  size_t bytes;
+  size_t customBytes;
   if (config_.rows == 0 || config_.columns == 0 || config_.layers == 0 ||
       config_.keymap == nullptr || config_.defaultKeymap == nullptr ||
       (config_.macroBytes != 0 && config_.macros == nullptr) ||
       (config_.encoderCount != 0 &&
        (config_.encoderMap == nullptr || config_.defaultEncoderMap == nullptr)) ||
-      (customValue_ && customValue_->stateSize() > kMaxCustomStateSize)) {
+      !stateBytes(bytes, customBytes)) {
     return false;
   }
   if (!load()) resetBuffers();
@@ -177,17 +179,23 @@ bool Protocol::process(uint8_t packet[kPacketSize], uint32_t nowMs) {
       const uint16_t offset = static_cast<uint16_t>(packet[1] << 8 | packet[2]);
       const uint8_t size = packet[3] > 28 ? 28 : packet[3];
       for (uint8_t i = 0; i < size; ++i) {
-        packet[4 + i] = offset + i < config_.macroBytes ? config_.macros[offset + i] : 0;
+        const uint32_t index = static_cast<uint32_t>(offset) + i;
+        packet[4 + i] = index < config_.macroBytes ? config_.macros[index] : 0;
       }
       break;
     }
     case 0x0F: {  // set macro buffer
       const uint16_t offset = static_cast<uint16_t>(packet[1] << 8 | packet[2]);
       const uint8_t size = packet[3] > 28 ? 28 : packet[3];
+      bool wrote = false;
       for (uint8_t i = 0; i < size; ++i) {
-        if (offset + i < config_.macroBytes) config_.macros[offset + i] = packet[4 + i];
+        const uint32_t index = static_cast<uint32_t>(offset) + i;
+        if (index < config_.macroBytes) {
+          config_.macros[index] = packet[4 + i];
+          wrote = true;
+        }
       }
-      markDirty(nowMs);
+      if (wrote) markDirty(nowMs);
       break;
     }
     case 0x10:  // reset macros
@@ -277,68 +285,37 @@ void Protocol::markDirty(uint32_t nowMs) {
 }
 
 size_t Protocol::keyCount() const {
-  return static_cast<size_t>(config_.rows) * config_.columns * config_.layers;
+  return static_cast<size_t>(static_cast<uint32_t>(config_.rows) * config_.columns *
+                             config_.layers);
 }
 
 size_t Protocol::keymapBytes() const { return keyCount() * sizeof(uint16_t); }
 
 size_t Protocol::encoderMapBytes() const {
-  return static_cast<size_t>(config_.layers) * config_.encoderCount * 2 * sizeof(uint16_t);
+  return static_cast<size_t>(static_cast<uint32_t>(config_.layers) *
+                             config_.encoderCount * 2U * sizeof(uint16_t));
 }
 
-size_t Protocol::stateBytes() const {
-  return keymapBytes() + encoderMapBytes() + config_.macroBytes + sizeof(layoutOptions_) +
-          (customValue_ ? customValue_->stateSize() : 0);
-}
+bool Protocol::stateBytes(size_t& bytes, size_t& customBytes) const {
+  customBytes = customValue_ ? customValue_->stateSize() : 0;
+  if (customBytes > kMaxCustomStateSize) return false;
 
-uint32_t Protocol::stateCrc() const {
-  uint32_t crc = 0xFFFFFFFFUL;
-  const uint8_t* keymap = reinterpret_cast<const uint8_t*>(config_.keymap);
-  for (size_t i = 0; i < keymapBytes(); ++i) crc = crc32Update(crc, keymap[i]);
-  const uint8_t* encoderMap = reinterpret_cast<const uint8_t*>(config_.encoderMap);
-  for (size_t i = 0; i < encoderMapBytes(); ++i) crc = crc32Update(crc, encoderMap[i]);
-  for (uint16_t i = 0; i < config_.macroBytes; ++i) crc = crc32Update(crc, config_.macros[i]);
-  const uint8_t* layoutOptions = reinterpret_cast<const uint8_t*>(&layoutOptions_);
-  for (size_t i = 0; i < sizeof(layoutOptions_); ++i) {
-    crc = crc32Update(crc, layoutOptions[i]);
-  }
-  if (customValue_) {
-    uint8_t state[kMaxCustomStateSize];
-    const size_t size = customValue_->stateSize();
-    if (size > sizeof(state) || !customValue_->saveState(state, size)) return 0;
-    for (size_t i = 0; i < size; ++i) crc = crc32Update(crc, state[i]);
-  }
-  return ~crc;
-}
-
-bool Protocol::load() {
-  if (!storage_ || (customValue_ && customValue_->stateSize() > kMaxCustomStateSize)) {
+  const uint32_t keymap = static_cast<uint32_t>(config_.rows) * config_.columns *
+                          config_.layers * sizeof(uint16_t);
+  const uint32_t encoders = static_cast<uint32_t>(config_.layers) *
+                            config_.encoderCount * 2U * sizeof(uint16_t);
+  const uint32_t total = keymap + encoders + config_.macroBytes +
+                         sizeof(layoutOptions_) + static_cast<uint32_t>(customBytes);
+  const uint32_t record = total + sizeof(StateHeader);
+  if (total > UINT16_MAX ||
+      (sizeof(size_t) < sizeof(uint32_t) && record > static_cast<uint32_t>(SIZE_MAX))) {
     return false;
   }
-  if (storage_->capacity() < sizeof(StateHeader) + stateBytes()) return false;
-  StateHeader header;
-  if (!storage_->read(0, reinterpret_cast<uint8_t*>(&header), sizeof(header)) ||
-      header.magic != kStateMagic || header.version != kStateVersion ||
-      header.payloadSize != stateBytes()) return false;
-  size_t offset = sizeof(header);
-  if (!storage_->read(offset, reinterpret_cast<uint8_t*>(config_.keymap), keymapBytes())) return false;
-  offset += keymapBytes();
-  if (encoderMapBytes() &&
-      !storage_->read(offset, reinterpret_cast<uint8_t*>(config_.encoderMap),
-                      encoderMapBytes())) return false;
-  offset += encoderMapBytes();
-  if (config_.macroBytes && !storage_->read(offset, config_.macros, config_.macroBytes)) return false;
-  offset += config_.macroBytes;
-  if (!storage_->read(offset, reinterpret_cast<uint8_t*>(&layoutOptions_),
-                      sizeof(layoutOptions_))) return false;
-  offset += sizeof(layoutOptions_);
-  uint8_t customState[kMaxCustomStateSize];
-  size_t customSize = 0;
-  if (customValue_ && customValue_->stateSize()) {
-    customSize = customValue_->stateSize();
-    if (customSize > sizeof(customState) ||
-        !storage_->read(offset, customState, customSize)) return false;
-  }
+  bytes = static_cast<size_t>(total);
+  return true;
+}
+
+uint32_t Protocol::stateCrc(const uint8_t* customState, size_t customSize) const {
   uint32_t crc = 0xFFFFFFFFUL;
   const uint8_t* keymap = reinterpret_cast<const uint8_t*>(config_.keymap);
   for (size_t i = 0; i < keymapBytes(); ++i) crc = crc32Update(crc, keymap[i]);
@@ -350,21 +327,67 @@ bool Protocol::load() {
     crc = crc32Update(crc, layoutOptions[i]);
   }
   for (size_t i = 0; i < customSize; ++i) crc = crc32Update(crc, customState[i]);
+  return ~crc;
+}
+
+bool Protocol::load() {
+  size_t bytes;
+  size_t customSize;
+  if (!storage_ || !stateBytes(bytes, customSize)) return false;
+  if (storage_->capacity() < sizeof(StateHeader) + bytes) return false;
+  StateHeader header;
+  if (!storage_->read(0, reinterpret_cast<uint8_t*>(&header), sizeof(header)) ||
+      header.magic != kStateMagic || header.version != kStateVersion ||
+      header.payloadSize != bytes) return false;
+
+  uint8_t state[kMaxCustomStateSize];
+  size_t offset = sizeof(header);
+  size_t remaining = bytes;
+  uint32_t crc = 0xFFFFFFFFUL;
+  while (remaining) {
+    const size_t chunk = remaining < sizeof(state) ? remaining : sizeof(state);
+    if (!storage_->read(offset, state, chunk)) return false;
+    for (size_t i = 0; i < chunk; ++i) crc = crc32Update(crc, state[i]);
+    offset += chunk;
+    remaining -= chunk;
+  }
   if (~crc != header.crc) return false;
-  return !customSize || customValue_->loadState(customState, customSize);
+
+  offset = sizeof(header);
+  if (!storage_->read(offset, reinterpret_cast<uint8_t*>(config_.keymap), keymapBytes())) return false;
+  offset += keymapBytes();
+  if (encoderMapBytes() &&
+      !storage_->read(offset, reinterpret_cast<uint8_t*>(config_.encoderMap),
+                      encoderMapBytes())) return false;
+  offset += encoderMapBytes();
+  if (config_.macroBytes && !storage_->read(offset, config_.macros, config_.macroBytes)) return false;
+  offset += config_.macroBytes;
+  if (!storage_->read(offset, reinterpret_cast<uint8_t*>(&layoutOptions_),
+                      sizeof(layoutOptions_))) return false;
+  offset += sizeof(layoutOptions_);
+  if (customSize && !storage_->read(offset, state, customSize)) return false;
+  if (customSize && !customValue_->loadState(state, customSize)) {
+    return false;
+  }
+  return true;
 }
 
 bool Protocol::save() {
-  if (!storage_ || (customValue_ && customValue_->stateSize() > kMaxCustomStateSize)) {
-    return false;
-  }
+  if (!storage_) return false;
   return writeState();
 }
 
 bool Protocol::writeState() {
-  const size_t bytes = stateBytes();
+  size_t bytes;
+  size_t customSize;
+  if (!stateBytes(bytes, customSize)) return false;
   if (storage_->capacity() < sizeof(StateHeader) + bytes) return false;
-  StateHeader header = {kStateMagic, kStateVersion, static_cast<uint16_t>(bytes), 0};
+  uint8_t customState[kMaxCustomStateSize];
+  if (customSize && !customValue_->saveState(customState, customSize)) return false;
+  StateHeader header = {kStateMagic, kStateVersion, static_cast<uint16_t>(bytes),
+                        stateCrc(customState, customSize)};
+  const uint32_t crc = header.crc;
+  header.crc = 0;
   if (!storage_->write(0, reinterpret_cast<const uint8_t*>(&header), sizeof(header))) return false;
   size_t offset = sizeof(header);
   if (!storage_->write(offset, reinterpret_cast<const uint8_t*>(config_.keymap), keymapBytes())) return false;
@@ -378,13 +401,8 @@ bool Protocol::writeState() {
   if (!storage_->write(offset, reinterpret_cast<const uint8_t*>(&layoutOptions_),
                        sizeof(layoutOptions_))) return false;
   offset += sizeof(layoutOptions_);
-  if (customValue_ && customValue_->stateSize()) {
-    uint8_t state[kMaxCustomStateSize];
-    const size_t size = customValue_->stateSize();
-    if (size > sizeof(state) || !customValue_->saveState(state, size) ||
-        !storage_->write(offset, state, size)) return false;
-  }
-  header.crc = stateCrc();
+  if (customSize && !storage_->write(offset, customState, customSize)) return false;
+  header.crc = crc;
   if (!storage_->write(0, reinterpret_cast<const uint8_t*>(&header), sizeof(header)) ||
       !storage_->commit()) return false;
   dirty_ = false;
@@ -392,11 +410,13 @@ bool Protocol::writeState() {
 }
 
 bool Protocol::factoryReset() {
+  size_t bytes;
+  size_t customSize;
+  if (!stateBytes(bytes, customSize)) return false;
   resetBuffers();
-  if (customValue_ && customValue_->stateSize()) {
+  if (customSize) {
     uint8_t state[kMaxCustomStateSize] = {};
-    if (customValue_->stateSize() > sizeof(state) ||
-        !customValue_->loadState(state, customValue_->stateSize())) return false;
+    if (!customValue_->loadState(state, customSize)) return false;
   }
   if (!storage_) return false;
   if (!storage_->erase()) return false;
@@ -407,7 +427,7 @@ bool Protocol::factoryReset() {
 void Protocol::readDynamicKeymap(uint16_t offset, uint8_t size, uint8_t* output) const {
   const size_t bytes = keymapBytes();
   for (uint8_t i = 0; i < size; ++i) {
-    const size_t index = offset + i;
+    const uint32_t index = static_cast<uint32_t>(offset) + i;
     if (index >= bytes) {
       output[i] = 0;
       continue;
@@ -421,14 +441,16 @@ void Protocol::readDynamicKeymap(uint16_t offset, uint8_t size, uint8_t* output)
 void Protocol::writeDynamicKeymap(uint16_t offset, uint8_t size, const uint8_t* input,
                                   uint32_t nowMs) {
   const size_t bytes = keymapBytes();
+  bool wrote = false;
   for (uint8_t i = 0; i < size; ++i) {
-    const size_t index = offset + i;
+    const uint32_t index = static_cast<uint32_t>(offset) + i;
     if (index >= bytes) continue;
     uint16_t& keycode = config_.keymap[index / 2];
     keycode = (index & 1U) ? static_cast<uint16_t>((keycode & 0xFF00U) | input[i])
                            : static_cast<uint16_t>((keycode & 0x00FFU) | (input[i] << 8));
+    wrote = true;
   }
-  markDirty(nowMs);
+  if (wrote) markDirty(nowMs);
 }
 
 }  // namespace via

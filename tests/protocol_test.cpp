@@ -406,6 +406,8 @@ void assertBulkBoundsAndEmptyWrites() {
   via::Config config = {1, 1, 1, keymap, defaults, macros, sizeof(macros)};
   via::Protocol keyboard(config, transport, nullptr, nullptr, &callbacks);
   assert(keyboard.begin(0));
+  macros[0] = 0x56;
+  macros[1] = 0x78;
 
   const uint8_t getCommands[] = {0x0E, 0x12};
   uint8_t packet[via::kPacketSize];

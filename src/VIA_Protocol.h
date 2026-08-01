@@ -120,9 +120,8 @@ class Protocol {
   size_t keyCount() const;
   size_t keymapBytes() const;
   size_t encoderMapBytes() const;
-  size_t stateBytes() const;
-  uint32_t stateCrc() const;
-  bool readState();
+  bool stateBytes(size_t& bytes, size_t& customBytes) const;
+  uint32_t stateCrc(const uint8_t* customState, size_t customSize) const;
   bool writeState();
   void readDynamicKeymap(uint16_t offset, uint8_t size, uint8_t* output) const;
   void writeDynamicKeymap(uint16_t offset, uint8_t size, const uint8_t* input,

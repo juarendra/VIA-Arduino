@@ -36,6 +36,12 @@ class MyRawHidTransport : public via::Transport {
 Call `keyboard.task(millis())` often from `loop()`. It receives one request,
 updates the supplied buffer as the VIA response, and sends it back.
 
+If the application owns packet I/O instead, call
+`keyboard.process(packet, millis())` on each mutable 32-byte request and send
+the resulting packet yourself. Direct processing cannot confirm delivery and
+therefore never invokes `bootloaderJump()`; use `task()` when that operation is
+enabled.
+
 ### RP2040 reference adapter
 
 `VIA_TinyUSB_RawHID.h` provides the first concrete adapter for RP2040 boards
@@ -92,7 +98,32 @@ not need a load workspace.
 `MemoryStorage` is only a test backend; it intentionally does not survive a
 power cycle.
 
-## 4. Connect physical features
+## 4. Configure protocol state and callbacks
+
+The fields after `autoSaveMs` are optional and were appended in 0.2.0:
+
+```text
+defaultLayoutOptions
+encoderCount, encoderMap, defaultEncoderMap
+loadBuffer, loadBufferBytes
+matrixStateEnabled, eepromResetEnabled, bootloaderEnabled
+```
+
+An encoder map contains `layers * encoderCount * 2` 16-bit entries. Direction
+`0` is counterclockwise and direction `1` is clockwise. Layout options and
+encoder maps are included in persisted state.
+
+Override `Callbacks::matrixRow(uint8_t) -> uint32_t` to expose matrix-test
+state, `deviceIndication(uint8_t)` for the complete indication value,
+`layoutOptionsChanged(uint32_t)` for layout changes, `changed()` for mutable
+state changes, and `bootloaderJump()` for a platform reset action.
+
+Matrix disclosure, EEPROM reset, and bootloader jump default to disabled. Set
+only the corresponding `Config` boolean after reviewing the application's
+security requirements. A bootloader callback runs only after `task()` sends
+the response successfully.
+
+## 5. Connect physical features
 
 The protocol knows the assigned QMK/VIA 16-bit keycode. Your sketch owns switch
 scanning and maps each event to:
@@ -105,7 +136,10 @@ Interpret the keycode with your keyboard HID, mouse, consumer, and system
 control implementation. This separation lets a small macro pad and a full
 keyboard share the same VIA configuration core.
 
-## 5. Test in VIA
+Matrix scanning, active-layer policy, and QMK keycode interpretation are not
+implemented by the protocol core.
+
+## 6. Test in VIA
 
 1. Use a unique USB VID/PID appropriate for your product.
 2. Create a V3 definition JSON that has the same matrix rows, columns, layers,

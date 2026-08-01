@@ -15,27 +15,28 @@
 - README, license, tests, and extra documentation remain outside `src/` and do
   not affect a user's firmware build.
 
-The layout follows the same public convention used by established libraries:
-metadata at the root, implementation in `src/`, examples in `examples/`, and
-documentation/automation beside them. Adafruit TinyUSB is a useful reference
-because it keeps a portable Arduino-facing API while delegating USB details to
-supported cores.
-
-## Install before Library Manager
+## Installation
 
 Users can install a GitHub ZIP through **Sketch → Include Library → Add .ZIP
 Library**, or place the `VIA-Arduino` directory under their sketchbook
 `libraries/` folder.
 
-## Submit after the first stable adapter release
+## Publish an update
+
+`VIA_Arduino` is already registered in Arduino Library Manager. For each new
+release:
 
 1. Keep `main` passing CI.
-2. Create a semantic-version GitHub release, for example `v0.1.0`.
-3. Confirm `library.properties` has the same semantic version.
-4. Run Arduino Lint with the Library Manager submission checks.
-5. Open a pull request to the Arduino `library-registry` repository pointing
-   to this repository and release tag.
+2. Set `library.properties` to the release version.
+3. Run the registered-library checks:
 
-Until an actual native-USB adapter is released and hardware-tested, this
-repository should be described as an alpha/protocol-core library rather than a
-fully plug-and-play keyboard library.
+   ```bash
+   arduino-lint --compliance specification --project-type library --library-manager update
+   ```
+
+4. Create a matching semantic-version GitHub release, for example `v0.2.0`.
+5. Wait for the Library Manager indexer to discover the tag; do not submit the
+   registered name as a new library.
+
+The 0.2.0 package is a protocol core with a compile-tested RP2040 adapter, not
+complete keyboard firmware or a hardware-certified platform list.

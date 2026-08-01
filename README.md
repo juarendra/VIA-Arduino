@@ -1,120 +1,138 @@
-# VIA-Arduino - The Ultimate Keyboard Protocol Engine
+# VIA-Arduino
 
-****Instantly connect any custom Arduino keyboard to the VIA Configurator ecosystem.****
+[![Version](https://img.shields.io/badge/version-0.2.0-blue.svg)](CHANGELOG.md)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Drive **massive 32-column matrices** effortlessly • **Native Bootloader Jump Support** • **Dynamic EEPROM Mapping** • [**Built for Custom Keyboards**](https://github.com/juarendra/VIA-Arduino)
+VIA-Arduino 0.2.0 is a portable C++11 core for VIA protocol v13. It processes
+fixed 32-byte Raw HID packets and manages dynamic keymaps, macros, layout
+options, encoder maps, custom values, and optional persistence.
 
-[![Platform](https://img.shields.io/badge/Platform-Arduino-blue.svg)](https://www.arduino.cc/) [![Version](https://img.shields.io/badge/Version-1.0.0-brightgreen.svg)]() [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) [![Community](https://img.shields.io/badge/github-juarendra-orange.svg?logo=github)](https://github.com/juarendra) [![Library Size](https://img.shields.io/badge/Size-Ultra%20Light-brightgreen.svg)]()
+This release is not complete keyboard firmware. Applications still own matrix
+scanning, layer selection, QMK keycode execution, and keyboard/mouse/consumer
+HID reports. VIA discovery also requires a compatible native-USB Raw HID
+interface and a matching VIA V3 definition; it is not automatic.
 
-## ⚡ Get Configured in 30 Seconds
+## Tested Targets
+
+CI verifies only these configurations:
+
+- Native C++11 protocol tests with warnings treated as errors.
+- Arduino Uno compilation of the transport-independent self-test. Uno has no
+  built-in VIA Raw HID adapter in this library.
+- Raspberry Pi Pico (RP2040) compilation with the Earle Philhower core and
+  Adafruit TinyUSB, including Raw HID, boot-keyboard, and EEPROM adapters.
+
+Other architectures may work through the portable interfaces, but are not
+verified by this project.
+
+## Quick Start
+
+Use `via::Protocol::process()` when an application already owns packet I/O:
 
 ```cpp
-#include <VIA_Protocol.h>
+#include <VIA_Arduino.h>
 
-class MyKeyboard : public via::Callbacks {
-public:
-  uint32_t matrixRow(uint8_t row) const override {
-    // Dynamic 32-column support automatically packed for VIA
-    return readMatrixRow(row); 
-  }
-  void bootloaderJump() override {
-    // 0x0B remote reset support
-    reset_usb_boot(0, 0); 
-  }
-};
+uint16_t keymap[2] = {0x0004, 0x0005};
+const uint16_t defaults[2] = {0x0004, 0x0005};
+via::MemoryTransport transport;
+via::Config config = {1, 2, 1, keymap, defaults};
+via::Protocol protocol(config, transport);
+
+void handleViaPacket(uint8_t packet[via::kPacketSize]) {
+  protocol.process(packet, millis());
+}
 ```
 
-**✅ Fully compatible with Arduino, ESP32, RP2040, ATmega32u4, Teensy, and 50+ other embedded platforms**
-
-## Table of Contents
-- [⚡ Quick Start](#-get-sensing-in-30-seconds)
-- [🚀 Why This Library?](#-why-this-library)
-- [📚 Core API Reference](#-core-api-reference)
-- [🌍 Platform Compatibility](#-platform-compatibility)
-- [📦 Installation](#-installation)
-- [📄 License](#-license)
-
-## 🚀 Why This Library?
-
-| **32-Column Matrix** | **Bootloader Jump** | **Fully Dynamic** | **Universal** |
-|---|---|---|---|
-| QMK-standard dynamic packing | Command 0x0B implemented | EEPROM macros and layers | Works on 50+ platforms |
-
-**🎯 Performance**: Intelligent dynamic byte packing scales memory overhead exactly to your column count.
-**🔧 Developer Experience**: Pure Object-Oriented callbacks • Automatically detected by VIA web interface.
-
-## 💡 Advanced Usage Example
+Use `task()` with a `via::Transport`; it receives one packet, processes it,
+retries failed response sends, and handles timed saves:
 
 ```cpp
-// Advanced Usage: Deep VIA Integration with 32-Column Support
-#include <VIA_Protocol.h>
-
-class MyCustomKeyboard : public via::Callbacks {
-public:
-  // Dynamically map a custom split keyboard matrix
-  uint32_t matrixRow(uint8_t row) const override {
-    uint32_t state = 0;
-    // Iterate through up to 32 columns dynamically!
-    for(int col = 0; col < 12; col++) {
-      if(isKeyPressed(row, col)) {
-        state |= (1UL << col); // Shift bits dynamically based on column count
-      }
-    }
-    return state; 
-  }
-  
-  // Respond to VIA Configurator's remote flash request (Command 0x0B)
-  void bootloaderJump() override {
-    Serial.println("VIA Command 0x0B received. Entering Bootloader...");
-    // Platform specific jump code goes here (e.g., Pico or Teensy)
-    reset_usb_boot(0, 0); 
-  }
-};
-
-MyCustomKeyboard keyboard;
-
 void setup() {
-  // Initialize USB HID endpoints...
+  protocol.begin(millis());
 }
 
 void loop() {
-  // Feed incoming raw USB HID packets into the protocol engine
-  // keyboard.handleData(rx_buffer, 32);
+  protocol.task(millis());
 }
 ```
 
-## 📚 Core API Reference
+See [`Protocol_Self_Test`](examples/Protocol_Self_Test/Protocol_Self_Test.ino)
+for the portable core and
+[`RP2040_VIA_RawHID`](examples/RP2040_VIA_RawHID/RP2040_VIA_RawHID.ino) for
+the compile-tested RP2040 adapters.
 
-- `virtual uint32_t matrixRow(uint8_t row)`: Override this to return the bitmask of pressed keys for a given row. Now supports up to 32 bits (columns).
-- `virtual void bootloaderJump()`: Override this to trigger a hardware reset (DFU/Bootloader mode) directly from the VIA GUI.
-- `void handleData(uint8_t* data, uint8_t length)`: Feed USB HID payloads into this function to let the protocol handle mapping, layout changes, and macros.
-- `void loadEEPROM()` / `void saveEEPROM()`: Built-in wrappers for layout persistence.
+## Persistence
 
-## 🌍 Platform Compatibility
+`via::Storage` is optional. When supplied, `Config::loadBuffer` is mandatory:
+it must be caller-owned, at least `requiredLoadBufferSize()` bytes, and must not
+overlap keymap, encoder, macro, or custom active state. `begin()` rejects an
+invalid workspace before accessing storage.
 
-This library is engineered to be platform-agnostic. Below is the verified compatibility matrix:
+```cpp
+uint8_t macros[64];
+uint8_t storageBytes[128];
+uint8_t loadBuffer[sizeof(keymap) + sizeof(macros) + sizeof(uint32_t)];
+via::MemoryStorage storage(storageBytes, sizeof(storageBytes));
 
-### 🟩 ESP32 Family (Espressif)
-- **ESP32 Classic** (WROOM/WROVER)
-- **ESP32-S2 / S3**
-- **ESP32-C3 / C6**
+via::Config storedConfig = {
+    1, 2, 1, keymap, defaults, macros, sizeof(macros), 0, 1, 750,
+    0, 0, nullptr, nullptr, loadBuffer, sizeof(loadBuffer),
+};
+via::Protocol storedProtocol(storedConfig, transport, &storage);
 
-### 🟦 Arduino Core & AVR
-- **Arduino Uno R3 / R4 Minima & WiFi**
-- **Arduino Mega 2560**
-- **Arduino Nano / Every / 33 IoT**
-- **ATtiny85 / ATmega32u4 (Leonardo/Pro Micro)**
+bool loaded = storedProtocol.load();
+bool saved = storedProtocol.save();
+```
 
-### 🟪 ARM & Advanced Cortex
-- **Teensy 4.0 / 4.1 / 3.2 / LC**
-- **Raspberry Pi Pico (RP2040 / RP2350)**
-- **STM32 (Bluepill / Blackpill)**
+`MemoryStorage` is for tests and examples and does not survive power loss.
+Board storage adapters must reserve enough space for the 12-byte record header
+plus the complete payload. See [`docs/PORTING.md`](docs/PORTING.md).
 
-## 📦 Installation
-1. Download this repository as a `.zip` file.
-2. In the Arduino IDE, go to **Sketch > Include Library > Add .ZIP Library...**
-3. Select the downloaded `.zip` file.
-4. *(Optional) Check the `examples/` directory for full usage implementation.*
+## Configuration And Callbacks
 
-## 📄 License
-This project is licensed under the MIT License - see the LICENSE file for details.
+The optional `Config` fields appended in 0.2.0 are:
+
+- `defaultLayoutOptions`
+- `encoderCount`, `encoderMap`, and `defaultEncoderMap`; each encoder stores two
+  16-bit keycodes per layer, counterclockwise then clockwise
+- `loadBuffer` and `loadBufferBytes`
+- `matrixStateEnabled`, `eepromResetEnabled`, and `bootloaderEnabled`
+
+All three security flags default to `false`. Matrix-state requests return
+zeros, while EEPROM reset and bootloader jump return `0xFF`, until their
+individual flags are enabled.
+
+Derive from `via::Callbacks` only for application hooks you need:
+
+- `matrixRow(uint8_t) -> uint32_t`: matrix-test state for up to 32 columns
+- `deviceIndication(uint8_t)`: full indication value from command `0x03/0x05`
+- `layoutOptionsChanged(uint32_t)`: new layout-option bitfield
+- `changed()`: mutable protocol state changed
+- `bootloaderJump()`: runs only from `task()`, after an enabled bootloader
+  command response is sent successfully
+
+## Supported Commands
+
+| Command | Support |
+|---|---|
+| `0x01` | Protocol version (`0x000D`) |
+| `0x02` | Get uptime, layout options, optional matrix state, firmware version, or QMK keycodes ABI (`0.0.8`) |
+| `0x03` | Set layout options or device indication |
+| `0x04`-`0x06` | Get/set keycode; reset keymap and encoder maps |
+| `0x07`-`0x09` | Custom-value set/get/save through `via::CustomValue` |
+| `0x0A` | Factory-reset persistent state, opt-in |
+| `0x0B` | Bootloader jump, opt-in |
+| `0x0C`-`0x10` | Macro count, size, buffer get/set, and reset |
+| `0x11`-`0x13` | Layer count and dynamic-keymap buffer get/set |
+| `0x14`-`0x15` | Encoder keycode get/set |
+
+Unsupported commands and invalid gated operations return `0xFF` in byte 0.
+
+## Installation
+
+Install `VIA_Arduino` from Arduino Library Manager, or install a release ZIP
+through **Sketch > Include Library > Add .ZIP Library...**.
+
+## License
+
+Released under the [MIT License](LICENSE).

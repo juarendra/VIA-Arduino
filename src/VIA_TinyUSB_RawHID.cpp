@@ -28,22 +28,24 @@ uint8_t const kViaRawHidDescriptor[] = {
 
 }  // namespace
 
+Adafruit_USBD_HID RawHID::hid_(kViaRawHidDescriptor,
+                               sizeof(kViaRawHidDescriptor),
+                               HID_ITF_PROTOCOL_NONE, 2, true);
+uint8_t RawHID::rx_[kPacketSize] = {};
+volatile bool RawHID::rxReady_ = false;
 RawHID* RawHID::active_ = nullptr;
+bool RawHID::beginAttempted_ = false;
 
-RawHID::RawHID()
-    : hid_(kViaRawHidDescriptor, sizeof(kViaRawHidDescriptor),
-           HID_ITF_PROTOCOL_NONE, 2, true),
-      rxReady_(false) {
-  memset(rx_, 0, sizeof(rx_));
-}
+RawHID::RawHID() {}
 
 RawHID::~RawHID() {
   if (active_ == this) active_ = nullptr;
 }
 
 bool RawHID::begin(const char* interfaceName) {
-  if (active_ && active_ != this) return false;
+  if (active_ || beginAttempted_) return false;
   active_ = this;
+  beginAttempted_ = true;
   if (!TinyUSBDevice.isInitialized()) TinyUSBDevice.begin(0);
   hid_.enableOutEndpoint(true);
   hid_.setPollInterval(2);
@@ -55,8 +57,12 @@ bool RawHID::begin(const char* interfaceName) {
 }
 
 bool RawHID::receive(uint8_t packet[kPacketSize]) {
-  if (!rxReady_) return false;
+  if (active_ != this) return false;
   noInterrupts();
+  if (!rxReady_) {
+    interrupts();
+    return false;
+  }
   memcpy(packet, rx_, kPacketSize);
   rxReady_ = false;
   interrupts();
@@ -64,21 +70,17 @@ bool RawHID::receive(uint8_t packet[kPacketSize]) {
 }
 
 bool RawHID::send(const uint8_t packet[kPacketSize]) {
-  return hid_.ready() && hid_.sendReport(0, packet, kPacketSize);
+  return active_ == this && hid_.ready() &&
+         hid_.sendReport(0, packet, kPacketSize);
 }
 
-bool RawHID::sendComplete() { return hid_.ready(); }
+bool RawHID::sendComplete() { return active_ == this && hid_.ready(); }
 
-bool RawHID::ready() { return hid_.ready(); }
+bool RawHID::ready() { return active_ == this && hid_.ready(); }
 
 void RawHID::setReport(uint8_t reportId, hid_report_type_t reportType,
                        uint8_t const* buffer, uint16_t length) {
-  if (active_) active_->receiveReport(reportId, reportType, buffer, length);
-}
-
-void RawHID::receiveReport(uint8_t reportId, hid_report_type_t reportType,
-                           uint8_t const* buffer, uint16_t length) {
-  if (reportId != 0 ||
+  if (!active_ || reportId != 0 ||
       (reportType != static_cast<hid_report_type_t>(0) &&
        reportType != HID_REPORT_TYPE_OUTPUT) ||
       length != kPacketSize || rxReady_) return;

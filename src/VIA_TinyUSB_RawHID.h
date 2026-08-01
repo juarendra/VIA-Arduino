@@ -27,13 +27,12 @@ class RawHID : public Transport {
  private:
   static void setReport(uint8_t reportId, hid_report_type_t reportType,
                         uint8_t const* buffer, uint16_t length);
-  void receiveReport(uint8_t reportId, hid_report_type_t reportType,
-                     uint8_t const* buffer, uint16_t length);
 
-  Adafruit_USBD_HID hid_;
-  uint8_t rx_[kPacketSize];
-  volatile bool rxReady_;
+  static Adafruit_USBD_HID hid_;
+  static uint8_t rx_[kPacketSize];
+  static volatile bool rxReady_;
   static RawHID* active_;
+  static bool beginAttempted_;
 };
 
 }  // namespace tinyusb

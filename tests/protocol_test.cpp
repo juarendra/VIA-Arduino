@@ -91,6 +91,44 @@ class RecordingStorage : public via::Storage {
   uint8_t bytes[64];
 };
 
+class FailingReadStorage : public via::Storage {
+ public:
+  FailingReadStorage(uint8_t* buffer, size_t length)
+      : buffer_(buffer), length_(length), reads_(0), failRead_(0) {
+    memset(buffer_, 0xFF, length_);
+  }
+
+  size_t capacity() const override { return length_; }
+  bool read(size_t offset, uint8_t* output, size_t length) override {
+    ++reads_;
+    if (reads_ == failRead_ || offset > length_ || length > length_ - offset) {
+      return false;
+    }
+    memcpy(output, buffer_ + offset, length);
+    return true;
+  }
+  bool write(size_t offset, const uint8_t* input, size_t length) override {
+    if (offset > length_ || length > length_ - offset) return false;
+    memcpy(buffer_ + offset, input, length);
+    return true;
+  }
+  bool commit() override { return true; }
+  bool erase() override {
+    memset(buffer_, 0xFF, length_);
+    return true;
+  }
+  void failRead(uint8_t call) {
+    reads_ = 0;
+    failRead_ = call;
+  }
+
+ private:
+  uint8_t* buffer_;
+  size_t length_;
+  uint8_t reads_;
+  uint8_t failRead_;
+};
+
 class ChannelSevenCustomValue : public via::CustomValue {
  public:
   ChannelSevenCustomValue() : setCalls(0), getCalls(0), saveCalls(0) {}
@@ -140,8 +178,10 @@ class OversizedCustomValue : public via::CustomValue {
 
 class StoredCustomValue : public via::CustomValue {
  public:
-  explicit StoredCustomValue(uint8_t initialValue, bool changingSave = false)
-      : value(initialValue), saveCalls(0), loadCalls(0), changingSave_(changingSave) {}
+  explicit StoredCustomValue(uint8_t initialValue, bool changingSave = false,
+                             bool rejectLoad = false)
+      : value(initialValue), saveCalls(0), loadCalls(0),
+        changingSave_(changingSave), rejectLoad_(rejectLoad) {}
 
   bool set(uint8_t[via::kPacketSize]) override { return true; }
   bool get(uint8_t[via::kPacketSize]) override { return true; }
@@ -153,7 +193,7 @@ class StoredCustomValue : public via::CustomValue {
     return true;
   }
   bool loadState(const uint8_t* state, size_t size) override {
-    if (size != 1) return false;
+    if (size != 1 || rejectLoad_) return false;
     ++loadCalls;
     value = state[0];
     return true;
@@ -165,6 +205,7 @@ class StoredCustomValue : public via::CustomValue {
 
  private:
   bool changingSave_;
+  bool rejectLoad_;
 };
 
 void assertMatrixPacking(uint8_t columns, uint32_t rowMask,
@@ -355,6 +396,23 @@ void assertOversizedPayloadRejectedBeforeStorageAccess() {
   assert(storage.accesses == 0);
 }
 
+void assertOversizedRecordRejectedBeforeStorageAccess() {
+  uint16_t keymap[1] = {};
+  const uint16_t defaults[1] = {};
+  uint8_t macros[65520] = {};
+  via::MemoryTransport transport;
+  RecordingStorage storage;
+  via::Config config = {1, 1, 1, keymap, defaults, macros, sizeof(macros)};
+  via::Protocol keyboard(config, transport, &storage);
+
+  assert(!keyboard.begin(0));
+  assert(storage.accesses == 0);
+  assert(!keyboard.load());
+  assert(storage.accesses == 0);
+  assert(!keyboard.save());
+  assert(storage.accesses == 0);
+}
+
 void assertCorruptLoadDoesNotMutateActiveState() {
   uint16_t keymap[2] = {0x1001, 0x1002};
   const uint16_t defaults[2] = {0x1001, 0x1002};
@@ -386,7 +444,46 @@ void assertCorruptLoadDoesNotMutateActiveState() {
   packet[4] = 0x02;
   packet[5] = 0x03;
   assert(keyboard.process(packet, 0));
-  storageBytes[12] ^= 0x01;
+  const uint8_t corruptOffsets[] = {12, 16, 20, 22, 26};
+  for (uint8_t i = 0; i < sizeof(corruptOffsets); ++i) {
+    storageBytes[corruptOffsets[i]] ^= 0x01;
+    assert(!keyboard.load());
+    assert(keymap[0] == 0xA001 && keymap[1] == 0xA002);
+    assert(encoderMap[0] == 0xB001 && encoderMap[1] == 0xB002);
+    assert(macros[0] == 0xC1 && macros[1] == 0xC2);
+    assert(keyboard.layoutOptions() == 0xE0010203UL);
+    assert(customValue.value == 0xD1);
+    assert(customValue.loadCalls == 0);
+    storageBytes[corruptOffsets[i]] ^= 0x01;
+  }
+}
+
+void assertSecondPassFailureDoesNotMutateActiveState() {
+  uint16_t keymap[2] = {0x1001, 0x1002};
+  const uint16_t defaults[2] = {0x1001, 0x1002};
+  uint16_t encoderMap[2] = {0x2001, 0x2002};
+  const uint16_t defaultEncoderMap[2] = {0x2001, 0x2002};
+  uint8_t macros[2] = {};
+  uint8_t storageBytes[64];
+  via::MemoryTransport transport;
+  FailingReadStorage storage(storageBytes, sizeof(storageBytes));
+  StoredCustomValue customValue(0x41);
+  via::Config config = {1, 2, 1, keymap, defaults, macros, sizeof(macros), 1, 0, 0,
+                        0x30010203UL, 1, encoderMap, defaultEncoderMap};
+  via::Protocol keyboard(config, transport, &storage, &customValue);
+  assert(keyboard.begin(0));
+  assert(keyboard.save());
+
+  keymap[0] = 0xA001;
+  keymap[1] = 0xA002;
+  encoderMap[0] = 0xB001;
+  encoderMap[1] = 0xB002;
+  macros[0] = 0xC1;
+  macros[1] = 0xC2;
+  customValue.value = 0xD1;
+  uint8_t packet[via::kPacketSize] = {0x03, 0x02, 0xE0, 0x01, 0x02, 0x03};
+  assert(keyboard.process(packet, 0));
+  storage.failRead(4);
 
   assert(!keyboard.load());
   assert(keymap[0] == 0xA001 && keymap[1] == 0xA002);
@@ -395,6 +492,37 @@ void assertCorruptLoadDoesNotMutateActiveState() {
   assert(keyboard.layoutOptions() == 0xE0010203UL);
   assert(customValue.value == 0xD1);
   assert(customValue.loadCalls == 0);
+}
+
+void assertCustomLoadRejectionDoesNotMutateActiveState() {
+  uint16_t keymap[1] = {0x1001};
+  const uint16_t defaults[1] = {0x1001};
+  uint8_t macros[1] = {};
+  uint8_t storageBytes[32] = {};
+  via::MemoryTransport transport;
+  via::MemoryStorage storage(storageBytes, sizeof(storageBytes));
+  StoredCustomValue saved(0x41);
+  via::Config config = {1, 1, 1, keymap, defaults, macros, sizeof(macros), 0, 0, 0,
+                        0x30010203UL};
+  via::Protocol keyboard(config, transport, &storage, &saved);
+  assert(keyboard.begin(0));
+  assert(keyboard.save());
+
+  keymap[0] = 0xA001;
+  macros[0] = 0xC1;
+  uint8_t packet[via::kPacketSize] = {0x03, 0x02, 0xE0, 0x01, 0x02, 0x03};
+  assert(keyboard.process(packet, 0));
+  StoredCustomValue rejecting(0xD1, false, true);
+  via::Protocol rejectingKeyboard(config, transport, &storage, &rejecting);
+  packet[2] = 0xE0;
+  assert(rejectingKeyboard.process(packet, 0));
+
+  assert(!rejectingKeyboard.load());
+  assert(keymap[0] == 0xA001);
+  assert(macros[0] == 0xC1);
+  assert(rejectingKeyboard.layoutOptions() == 0xE0010203UL);
+  assert(rejecting.value == 0xD1);
+  assert(rejecting.loadCalls == 0);
 }
 
 void assertBulkBoundsAndEmptyWrites() {
@@ -497,6 +625,9 @@ int main() {
   assertOversizedCustomStateRejectedByDirectPersistence();
   assertOversizedPayloadRejectedBeforeStorageAccess();
   assertCorruptLoadDoesNotMutateActiveState();
+  assertOversizedRecordRejectedBeforeStorageAccess();
+  assertCustomLoadRejectionDoesNotMutateActiveState();
+  assertSecondPassFailureDoesNotMutateActiveState();
   assertBulkBoundsAndEmptyWrites();
   assertCustomStateSerializedOncePerSave();
   assertRGBLightSaveChannel();

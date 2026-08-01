@@ -240,6 +240,16 @@ void assertOversizedCustomStateRejectedBeforeStorageAccess() {
   assert(storage.accesses == 0);
 }
 
+void assertRGBLightSaveChannel() {
+  via::RGBLightState state = {};
+  via::RGBLight light(state);
+  uint8_t packet[via::kPacketSize] = {};
+  packet[1] = 2;
+  assert(light.save(packet));
+  packet[1] = 7;
+  assert(!light.save(packet));
+}
+
 }  // namespace
 
 int main() {
@@ -255,6 +265,7 @@ int main() {
   assertLegacyIndicationCallback();
   assertCustomValueRouting();
   assertOversizedCustomStateRejectedBeforeStorageAccess();
+  assertRGBLightSaveChannel();
 
   uint16_t keymap[4] = {0x0004, 0x0005, 0x0014, 0x001A};
   const uint16_t defaults[4] = {0x0004, 0x0005, 0x0014, 0x001A};

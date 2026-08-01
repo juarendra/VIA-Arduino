@@ -211,5 +211,126 @@ int main() {
     assert(matrix.changedRows() == 0x01);
   }
 
+  // hasChanged: true after debounced press, resets changedRows
+  {
+    via::Pin rowPins[1] = {100};
+    via::Pin colPins[1] = {200};
+    uint32_t rawRows[1] = {0};
+    uint32_t candidate[1] = {0};
+    uint32_t stable[1] = {0};
+    uint32_t changed[1] = {0};
+    FakeMatrixIO io;
+    io.keyMap[100 & 0x1F] = 0x01;
+    via::MatrixConfig cfg = {1, 1, rowPins, colPins, via::kColToRow, 30, 5,
+                              rawRows, candidate, stable, changed};
+    via::Matrix matrix(cfg, io);
+    assert(matrix.begin());
+    matrix.task(0);
+    assert(matrix.stableRows() == 0);
+    assert(!matrix.hasChanged());
+    matrix.task(5);
+    assert(matrix.stableRows() == 0x01);
+    assert(matrix.hasChanged());
+    assert(!matrix.hasChanged());
+  }
+
+  // hasChanged: false in same stable state (no re-reads after reset)
+  {
+    via::Pin rowPins[1] = {100};
+    via::Pin colPins[1] = {200};
+    uint32_t rawRows[1] = {0};
+    uint32_t candidate[1] = {0};
+    uint32_t stable[1] = {0};
+    uint32_t changed[1] = {0};
+    FakeMatrixIO io;
+    io.keyMap[100 & 0x1F] = 0x01;
+    via::MatrixConfig cfg = {1, 1, rowPins, colPins, via::kColToRow, 30, 5,
+                              rawRows, candidate, stable, changed};
+    via::Matrix matrix(cfg, io);
+    assert(matrix.begin());
+    matrix.task(0);
+    matrix.task(5);
+    assert(matrix.hasChanged());
+    assert(!matrix.hasChanged());
+    matrix.task(100);
+    assert(!matrix.hasChanged());
+  }
+
+  // changedRow: per-row column bits after debounce
+  {
+    via::Pin rowPins[2] = {100, 101};
+    via::Pin colPins[3] = {200, 201, 202};
+    uint32_t rawRows[2] = {0, 0};
+    uint32_t candidate[2] = {0, 0};
+    uint32_t stable[2] = {0, 0};
+    uint32_t changed[2] = {0, 0};
+    FakeMatrixIO io;
+    io.keyMap[100 & 0x1F] = 0x01 | 0x04;
+    via::MatrixConfig cfg = {2, 3, rowPins, colPins, via::kColToRow, 30, 0,
+                              rawRows, candidate, stable, changed};
+    via::Matrix matrix(cfg, io);
+    assert(matrix.begin());
+    matrix.task(0);
+    assert(matrix.changedRow(0) == (1U | 4U));
+    assert(matrix.changedRow(1) == 0);
+  }
+
+  // stableRow: returns stable state for given row
+  {
+    via::Pin rowPins[2] = {100, 101};
+    via::Pin colPins[2] = {200, 201};
+    uint32_t rawRows[2] = {0, 0};
+    uint32_t candidate[2] = {0, 0};
+    uint32_t stable[2] = {0, 0};
+    uint32_t changed[2] = {0, 0};
+    FakeMatrixIO io;
+    io.keyMap[100 & 0x1F] = 0x02;
+    via::MatrixConfig cfg = {2, 2, rowPins, colPins, via::kColToRow, 30, 0,
+                              rawRows, candidate, stable, changed};
+    via::Matrix matrix(cfg, io);
+    assert(matrix.begin());
+    matrix.task(0);
+    assert(matrix.stableRow(0) == 0x02);
+    assert(matrix.stableRow(1) == 0);
+  }
+
+  // nextScan: during debounce, returns future time
+  {
+    via::Pin rowPins[1] = {100};
+    via::Pin colPins[1] = {200};
+    uint32_t rawRows[1] = {0};
+    uint32_t candidate[1] = {0};
+    uint32_t stable[1] = {0};
+    uint32_t changed[1] = {0};
+    FakeMatrixIO io;
+    io.keyMap[100 & 0x1F] = 0x01;
+    via::MatrixConfig cfg = {1, 1, rowPins, colPins, via::kColToRow, 30, 10,
+                              rawRows, candidate, stable, changed};
+    via::Matrix matrix(cfg, io);
+    assert(matrix.begin());
+    matrix.task(0);
+    assert(matrix.nextScan(0) == 10);
+    matrix.task(10);
+    assert(matrix.nextScan(10) == 0);
+  }
+
+  // nextScan: no debounce pending returns 0
+  {
+    via::Pin rowPins[1] = {100};
+    via::Pin colPins[1] = {200};
+    uint32_t rawRows[1] = {0};
+    uint32_t candidate[1] = {0};
+    uint32_t stable[1] = {0};
+    uint32_t changed[1] = {0};
+    FakeMatrixIO io;
+    io.keyMap[100 & 0x1F] = 0x01;
+    via::MatrixConfig cfg = {1, 1, rowPins, colPins, via::kColToRow, 30, 0,
+                              rawRows, candidate, stable, changed};
+    via::Matrix matrix(cfg, io);
+    assert(matrix.begin());
+    matrix.task(0);
+    assert(matrix.nextScan(0) == 0);
+  }
+
   return 0;
 }

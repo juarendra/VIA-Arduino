@@ -44,6 +44,8 @@ class Matrix {
   void task(uint32_t ms);
 
   uint32_t rawRow(uint8_t r) const { return config_.rawRows[r]; }
+  uint32_t stableRow(uint8_t r) const { return config_.stableRows[r]; }
+  uint32_t changedRow(uint8_t r) const { return config_.changedRows[r]; }
   uint32_t stableRows() const {
     uint32_t mask = 0;
     for (uint8_t r = 0; r < config_.rows; ++r)
@@ -55,6 +57,24 @@ class Matrix {
     for (uint8_t r = 0; r < config_.rows; ++r)
       if (config_.changedRows[r]) mask |= (1UL << r);
     return mask;
+  }
+
+  bool hasChanged() {
+    for (uint8_t r = 0; r < config_.rows; ++r)
+      if (config_.changedRows[r]) {
+        for (uint8_t j = 0; j < config_.rows; ++j)
+          config_.changedRows[j] = 0;
+        return true;
+      }
+    return false;
+  }
+
+  uint32_t nextScan(uint32_t now) const {
+    if (!debouncePending_) return 0;
+    uint32_t elapsed = now - lastRawChangeTS_;
+    uint32_t remaining = config_.debounceMs;
+    if (elapsed < remaining) return remaining - elapsed;
+    return 0;
   }
 
   uint8_t rows() const { return config_.rows; }

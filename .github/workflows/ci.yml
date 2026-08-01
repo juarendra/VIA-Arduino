@@ -16,6 +16,18 @@ jobs:
         with:
           library-manager: update
 
+  matrix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build native matrix test
+        run: |
+          g++ -std=c++11 -Wall -Wextra -Werror -Isrc tests/matrix_test.cpp \
+            src/VIA_Matrix.cpp -o matrix_test && ./matrix_test
+          g++ -std=c++11 -Wall -Wextra -Werror -fsanitize=address,undefined \
+            -fno-omit-frame-pointer -Isrc tests/matrix_test.cpp \
+            src/VIA_Matrix.cpp -o matrix_test_san && ./matrix_test_san
+
   test:
     runs-on: ubuntu-latest
     steps:
@@ -31,9 +43,6 @@ jobs:
             -o tinyusb_rawhid_test
           ./tinyusb_rawhid_test failed
           ./tinyusb_rawhid_test successful
-          g++ -std=c++11 -Wall -Wextra -Werror -Isrc \
-            tests/matrix_test.cpp -o matrix_test
-          ./matrix_test
       - uses: arduino/setup-arduino-cli@v2
       - name: Compile Arduino example
         run: |

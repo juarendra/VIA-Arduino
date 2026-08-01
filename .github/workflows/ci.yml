@@ -73,6 +73,22 @@ jobs:
             tests/fakes/usbd_core.cpp -o stm32f1_usb_test && \
             ./stm32f1_usb_test
 
+  flash:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run flash tests
+        run: |
+          g++ -std=c++11 -Wall -Wextra -Werror -Isrc \
+            tests/flash_test.cpp src/VIA_STM32F1_Flash.cpp -o flash_test && \
+            ./flash_test
+      - name: Build and run flash tests (ASan/UBSan)
+        run: |
+          g++ -std=c++11 -Wall -Wextra -Werror \
+            -fsanitize=address,undefined -fno-omit-frame-pointer -Isrc \
+            tests/flash_test.cpp src/VIA_STM32F1_Flash.cpp -o flash_test_san && \
+            ./flash_test_san
+
   test:
     runs-on: ubuntu-latest
     steps:

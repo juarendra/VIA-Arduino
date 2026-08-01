@@ -74,9 +74,9 @@ pages/slots so that a reset or power loss never destroys the last complete
 record. Do not point a flash adapter at the bootloader, option bytes, or
 application code.
 
-Storage-backed protocols also require a separate static load workspace. It
-must hold the complete payload. The core rejects overlap with configured
-keymap, encoder-map, and macro buffers:
+Storage-backed protocols also require a separate static load/reset workspace.
+It must hold the complete payload. The core rejects overlap with mutable or
+default keymap and encoder-map buffers, and with the macro buffer:
 
 ```cpp
 static uint8_t loadBuffer[sizeof(keymap) + sizeof(encoderMap) +
@@ -94,14 +94,22 @@ via::Protocol keyboard(config, transport, &storage, customValue);
 `keyboard.requiredLoadBufferSize()` returns the exact payload size, or `0` when
 the payload cannot fit the supported record. `begin()` returns false before
 storage access when a storage-backed configuration omits the workspace,
-provides too few bytes, or aliases configured keymap, encoder-map, or macro
-buffers. The core cannot inspect active state owned by a `CustomValue`
+provides too few bytes, or aliases configured mutable/default keymap,
+mutable/default encoder-map, or macro buffers. The core cannot inspect active
+state owned by a `CustomValue`
 implementation; the caller must keep that state outside this workspace. The
 implementation must also leave active state unchanged when `loadState()`
 returns false. Configurations without `Storage` do not need a load workspace.
 
 `MemoryStorage` is only a test backend; it intentionally does not survive a
 power cycle.
+
+Factory reset stages the complete default payload in this workspace, then calls
+`erase()`, writes the replacement record, and calls `commit()`. Live keymap,
+encoder, macro, layout, and custom state plus callbacks are published only after
+that commit succeeds. An adapter that promises atomic commits must keep erase
+and write effects provisional until `commit()` selects the replacement record;
+the bundled EEPROM adapter does not promise power-loss atomicity.
 
 ## 4. Configure protocol state and callbacks
 
@@ -120,8 +128,9 @@ encoder maps are included in persisted state.
 
 Override `Callbacks::matrixRow(uint8_t) -> uint32_t` to expose matrix-test
 state, `deviceIndication(uint8_t)` for the complete indication value,
-`layoutOptionsChanged(uint32_t)` for layout changes, `changed()` for mutable
-state changes, and `bootloaderJump()` for a platform reset action.
+`layoutOptionsChanged(uint32_t)` for command changes and successful
+stored/default load or factory-reset publication, `changed()` for mutable state
+changes, and `bootloaderJump()` for a platform reset action.
 
 Matrix disclosure, EEPROM reset, and bootloader jump default to disabled. Set
 only the corresponding `Config` boolean after reviewing the application's

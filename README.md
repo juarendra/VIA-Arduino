@@ -65,10 +65,11 @@ the compile-tested RP2040 adapters.
 
 `via::Storage` is optional. When supplied, `Config::loadBuffer` is mandatory:
 it must be caller-owned and at least `requiredLoadBufferSize()` bytes. The core
-rejects overlap with configured keymap, encoder-map, and macro buffers before
-accessing storage. It cannot inspect state owned by a `CustomValue` handler, so
-the caller must keep that active state outside the load workspace as required
-by the [porting contract](docs/PORTING.md).
+rejects overlap with mutable or default keymap and encoder-map buffers, and with
+the macro buffer, before accessing storage. The same workspace stages factory
+defaults before a reset is made durable. The core cannot inspect state owned by
+a `CustomValue` handler, so the caller must keep that active state outside the
+workspace as required by the [porting contract](docs/PORTING.md).
 
 ```cpp
 uint8_t macros[64];
@@ -113,7 +114,8 @@ Derive from `via::Callbacks` only for application hooks you need:
 
 - `matrixRow(uint8_t) -> uint32_t`: matrix-test state for up to 32 columns
 - `deviceIndication(uint8_t)`: full indication value from command `0x03/0x05`
-- `layoutOptionsChanged(uint32_t)`: new layout-option bitfield
+- `layoutOptionsChanged(uint32_t)`: final layout-option bitfield after a command,
+  successful stored/default startup load, direct load, or factory reset
 - `changed()`: mutable protocol state changed
 - `bootloaderJump()`: runs only from `task()`, after an enabled bootloader
   command response is sent successfully
@@ -134,6 +136,9 @@ Derive from `via::Callbacks` only for application hooks you need:
 | `0x14`-`0x15` | Encoder keycode get/set |
 
 Unsupported commands and invalid gated operations return `0xFF` in byte 0.
+An enabled factory reset publishes defaults and invokes state callbacks only
+after storage erase, replacement writes, and commit all succeed. Earlier
+failures leave live protocol and custom state unchanged.
 
 ## Installation
 

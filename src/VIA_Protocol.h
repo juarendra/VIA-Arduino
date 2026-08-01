@@ -21,7 +21,8 @@ class Transport {
 };
 
 /* Storage implementations may wrap EEPROM, Preferences/NVS, or a reserved
- * flash region. Atomic dual-page flash policy belongs in the adapter. */
+ * flash region. Adapters claiming atomic commits must keep erase/write changes
+ * provisional until commit() selects the new durable record. */
 class Storage {
  public:
   virtual ~Storage() {}
@@ -103,8 +104,8 @@ struct Config {
   uint8_t encoderCount;
   uint16_t* encoderMap;
   const uint16_t* defaultEncoderMap;
-  // Required with Storage: caller-owned payload staging space, sized by
-  // Protocol::requiredLoadBufferSize(), that does not overlap active state.
+  // Required with Storage: caller-owned load/reset staging space, sized by
+  // Protocol::requiredLoadBufferSize(), that does not overlap configured state.
   uint8_t* loadBuffer;
   uint16_t loadBufferBytes;
   bool matrixStateEnabled;

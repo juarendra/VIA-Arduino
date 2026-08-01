@@ -49,7 +49,7 @@ class LegacyIndicationCallbacks : public via::Callbacks {
 
 class RecordingStorage : public via::Storage {
  public:
-  RecordingStorage() : accesses(0), writes(0), commits(0) {}
+  RecordingStorage() : accesses(0), reads(0), writes(0), commits(0) {}
 
   size_t capacity() const override {
     ++accesses;
@@ -57,6 +57,7 @@ class RecordingStorage : public via::Storage {
   }
   bool read(size_t, uint8_t*, size_t) override {
     ++accesses;
+    ++reads;
     return false;
   }
   bool write(size_t, const uint8_t*, size_t) override {
@@ -75,11 +76,13 @@ class RecordingStorage : public via::Storage {
   }
   void reset() {
     accesses = 0;
+    reads = 0;
     writes = 0;
     commits = 0;
   }
 
   mutable uint8_t accesses;
+  uint8_t reads;
   uint8_t writes;
   uint8_t commits;
   uint8_t bytes[64];
@@ -285,6 +288,29 @@ void assertOversizedCustomStateRejectedBeforeStorageAccess() {
   assert(storage.accesses == 0);
 }
 
+void assertOversizedCustomStateRejectedByDirectPersistence() {
+  uint16_t keymap[1] = {};
+  const uint16_t defaults[1] = {};
+  via::MemoryTransport transport;
+  RecordingStorage storage;
+  OversizedCustomValue customValue;
+  via::Config config = {1, 1, 1, keymap, defaults};
+  via::Protocol keyboard(config, transport, &storage, &customValue);
+
+  assert(!keyboard.save());
+  assert(storage.accesses == 0);
+  assert(storage.reads == 0);
+  assert(storage.writes == 0);
+  assert(storage.commits == 0);
+
+  storage.reset();
+  assert(!keyboard.load());
+  assert(storage.accesses == 0);
+  assert(storage.reads == 0);
+  assert(storage.writes == 0);
+  assert(storage.commits == 0);
+}
+
 void assertRGBLightSaveChannel() {
   via::RGBLightState state = {};
   via::RGBLight light(state);
@@ -311,6 +337,7 @@ int main() {
   assertCustomValueRouting();
   assertLegacyCustomValueSaveCompatibility();
   assertOversizedCustomStateRejectedBeforeStorageAccess();
+  assertOversizedCustomStateRejectedByDirectPersistence();
   assertRGBLightSaveChannel();
 
   uint16_t keymap[4] = {0x0004, 0x0005, 0x0014, 0x001A};

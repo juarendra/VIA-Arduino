@@ -38,6 +38,52 @@ class RecordingCallbacks : public via::Callbacks {
   uint8_t changeCalls;
 };
 
+class SecurityCallbacks : public via::Callbacks {
+ public:
+  SecurityCallbacks() : matrixCalls(0), bootloaderCalls(0) {}
+
+  uint32_t matrixRow(uint8_t) const override {
+    ++matrixCalls;
+    return 0xA5;
+  }
+  void bootloaderJump() override { ++bootloaderCalls; }
+
+  mutable uint8_t matrixCalls;
+  uint8_t bootloaderCalls;
+};
+
+class FailFirstTransport : public via::Transport {
+ public:
+  FailFirstTransport()
+      : requestCount(0), delivered(0), receiveCalls(0), sendCalls(0) {
+    memset(requests, 0, sizeof(requests));
+    memset(sent, 0, sizeof(sent));
+  }
+
+  bool receive(uint8_t packet[via::kPacketSize]) override {
+    ++receiveCalls;
+    if (delivered == requestCount) return false;
+    memcpy(packet, requests[delivered++], via::kPacketSize);
+    return true;
+  }
+  bool send(const uint8_t packet[via::kPacketSize]) override {
+    memcpy(sent[sendCalls], packet, via::kPacketSize);
+    ++sendCalls;
+    return sendCalls != 1;
+  }
+  void queue(const uint8_t packet[via::kPacketSize]) {
+    assert(requestCount < 2);
+    memcpy(requests[requestCount++], packet, via::kPacketSize);
+  }
+
+  uint8_t requests[2][via::kPacketSize];
+  uint8_t sent[3][via::kPacketSize];
+  uint8_t requestCount;
+  uint8_t delivered;
+  uint8_t receiveCalls;
+  uint8_t sendCalls;
+};
+
 class LegacyIndicationCallbacks : public via::Callbacks {
  public:
   LegacyIndicationCallbacks() : calls(0) {}
@@ -52,7 +98,7 @@ class LegacyIndicationCallbacks : public via::Callbacks {
 
 class RecordingStorage : public via::Storage {
  public:
-  RecordingStorage() : accesses(0), reads(0), writes(0), commits(0) {}
+  RecordingStorage() : accesses(0), reads(0), writes(0), commits(0), erases(0) {}
 
   size_t capacity() const override {
     ++accesses;
@@ -75,6 +121,7 @@ class RecordingStorage : public via::Storage {
   }
   bool erase() override {
     ++accesses;
+    ++erases;
     return true;
   }
   void reset() {
@@ -82,12 +129,14 @@ class RecordingStorage : public via::Storage {
     reads = 0;
     writes = 0;
     commits = 0;
+    erases = 0;
   }
 
   mutable uint8_t accesses;
   uint8_t reads;
   uint8_t writes;
   uint8_t commits;
+  uint8_t erases;
   uint8_t bytes[64];
 };
 
@@ -705,6 +754,150 @@ void assertRGBLightSaveChannel() {
   assert(!light.save(packet));
 }
 
+void assertSensitiveCommandsAreOptIn() {
+  uint16_t keymap[1] = {};
+  const uint16_t defaults[1] = {};
+  uint8_t loadBuffer[6];
+  RecordingStorage storage;
+  via::MemoryTransport transport;
+  SecurityCallbacks callbacks;
+  via::Config config = {1, 1, 1, keymap, defaults};
+  config.loadBuffer = loadBuffer;
+  config.loadBufferBytes = sizeof(loadBuffer);
+  via::Protocol keyboard(config, transport, &storage, nullptr, &callbacks);
+  assert(keyboard.begin(0));
+  storage.reset();
+
+  uint8_t packet[via::kPacketSize];
+  memset(packet, 0xA5, sizeof(packet));
+  packet[0] = 0x02;
+  packet[1] = 0x03;
+  packet[2] = 0;
+  assert(keyboard.process(packet, 0));
+  for (uint8_t i = 3; i < via::kPacketSize; ++i) assert(packet[i] == 0);
+  assert(callbacks.matrixCalls == 0);
+
+  memset(packet, 0, sizeof(packet));
+  packet[0] = 0x0A;
+  assert(!keyboard.process(packet, 0));
+  assert(packet[0] == 0xFF);
+  assert(storage.accesses == 0);
+
+  packet[0] = 0x0B;
+  assert(!keyboard.process(packet, 0));
+  assert(packet[0] == 0xFF);
+  assert(callbacks.bootloaderCalls == 0);
+
+  config.matrixStateEnabled = true;
+  via::Protocol matrixKeyboard(config, transport, &storage, nullptr, &callbacks);
+  assert(matrixKeyboard.begin(0));
+  storage.reset();
+  memset(packet, 0, sizeof(packet));
+  packet[0] = 0x02;
+  packet[1] = 0x03;
+  assert(matrixKeyboard.process(packet, 0));
+  assert(packet[3] == 0xA5);
+  assert(callbacks.matrixCalls == 1);
+  packet[0] = 0x0A;
+  assert(!matrixKeyboard.process(packet, 0));
+  packet[0] = 0x0B;
+  assert(!matrixKeyboard.process(packet, 0));
+  assert(storage.accesses == 0);
+  assert(callbacks.bootloaderCalls == 0);
+
+  config.matrixStateEnabled = false;
+  config.eepromResetEnabled = true;
+  via::Protocol resetKeyboard(config, transport, &storage, nullptr, &callbacks);
+  assert(resetKeyboard.begin(0));
+  storage.reset();
+  memset(packet, 0, sizeof(packet));
+  packet[0] = 0x02;
+  packet[1] = 0x03;
+  assert(resetKeyboard.process(packet, 0));
+  assert(packet[3] == 0);
+  assert(callbacks.matrixCalls == 1);
+  packet[0] = 0x0A;
+  assert(resetKeyboard.process(packet, 0));
+  assert(storage.erases == 1 && storage.commits == 1);
+  packet[0] = 0x0B;
+  assert(!resetKeyboard.process(packet, 0));
+  assert(callbacks.bootloaderCalls == 0);
+
+  config.eepromResetEnabled = false;
+  config.bootloaderEnabled = true;
+  via::Protocol bootloaderKeyboard(config, transport, &storage, nullptr, &callbacks);
+  assert(bootloaderKeyboard.begin(0));
+  storage.reset();
+  memset(packet, 0, sizeof(packet));
+  packet[0] = 0x02;
+  packet[1] = 0x03;
+  assert(bootloaderKeyboard.process(packet, 0));
+  assert(packet[3] == 0);
+  packet[0] = 0x0A;
+  assert(!bootloaderKeyboard.process(packet, 0));
+  packet[0] = 0x0B;
+  assert(bootloaderKeyboard.process(packet, 0));
+  assert(storage.accesses == 0);
+  assert(callbacks.matrixCalls == 1);
+  assert(callbacks.bootloaderCalls == 0);
+}
+
+void assertFailedSendRetriesWithoutReprocessing() {
+  uint16_t keymap[1] = {0x0004};
+  const uint16_t defaults[1] = {0x0004};
+  FailFirstTransport transport;
+  RecordingCallbacks callbacks;
+  via::Config config = {1, 1, 1, keymap, defaults};
+  via::Protocol keyboard(config, transport, nullptr, nullptr, &callbacks);
+  assert(keyboard.begin(0));
+
+  const uint8_t first[via::kPacketSize] = {0x05, 0, 0, 0, 0x12, 0x34};
+  const uint8_t second[via::kPacketSize] = {0x05, 0, 0, 0, 0x56, 0x78};
+  transport.queue(first);
+  transport.queue(second);
+
+  keyboard.task(1);
+  assert(transport.receiveCalls == 1 && transport.delivered == 1);
+  assert(transport.sendCalls == 1);
+  assert(keymap[0] == 0x1234 && callbacks.changeCalls == 1);
+
+  keyboard.task(2);
+  assert(transport.receiveCalls == 1 && transport.delivered == 1);
+  assert(transport.sendCalls == 2);
+  assert(memcmp(transport.sent[0], transport.sent[1], via::kPacketSize) == 0);
+  assert(keymap[0] == 0x1234 && callbacks.changeCalls == 1);
+
+  keyboard.task(3);
+  assert(transport.receiveCalls == 2 && transport.delivered == 2);
+  assert(transport.sendCalls == 3);
+  assert(keymap[0] == 0x5678 && callbacks.changeCalls == 2);
+}
+
+void assertBootloaderWaitsForSuccessfulSend() {
+  uint16_t keymap[1] = {};
+  const uint16_t defaults[1] = {};
+  FailFirstTransport transport;
+  SecurityCallbacks callbacks;
+  via::Config config = {1, 1, 1, keymap, defaults};
+  config.bootloaderEnabled = true;
+  via::Protocol keyboard(config, transport, nullptr, nullptr, &callbacks);
+  assert(keyboard.begin(0));
+
+  const uint8_t request[via::kPacketSize] = {0x0B};
+  transport.queue(request);
+  keyboard.task(1);
+  assert(transport.sendCalls == 1);
+  assert(callbacks.bootloaderCalls == 0);
+
+  keyboard.task(2);
+  assert(transport.receiveCalls == 1);
+  assert(transport.sendCalls == 2);
+  assert(callbacks.bootloaderCalls == 1);
+
+  keyboard.task(3);
+  assert(callbacks.bootloaderCalls == 1);
+}
+
 }  // namespace
 
 int main() {
@@ -733,6 +926,9 @@ int main() {
   assertBulkBoundsAndEmptyWrites();
   assertCustomStateSerializedOncePerSave();
   assertRGBLightSaveChannel();
+  assertSensitiveCommandsAreOptIn();
+  assertFailedSendRetriesWithoutReprocessing();
+  assertBootloaderWaitsForSuccessfulSend();
 
   uint16_t keymap[4] = {0x0004, 0x0005, 0x0014, 0x001A};
   const uint16_t defaults[4] = {0x0004, 0x0005, 0x0014, 0x001A};

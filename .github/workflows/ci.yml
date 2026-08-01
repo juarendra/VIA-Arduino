@@ -105,3 +105,14 @@ jobs:
         run: |
           arduino-cli compile --fqbn rp2040:rp2040:rpipico:usbstack=tinyusb \
             --libraries . examples/RP2040_VIA_RawHID
+      - name: Install STM32 toolchain
+        run: |
+          arduino-cli config add board_manager.additional_urls \
+            https://github.com/stm32duino/BoardManagerFiles/raw/main/package_stmicroelectronics_index.json
+          arduino-cli core update-index
+          arduino-cli core install STMicroelectronics:stm32@3.0.0
+      - name: Compile STM32F103 keyboard
+        run: |
+          arduino-cli compile --clean --warnings all \
+            --fqbn "STMicroelectronics:stm32:GenF1:pnum=BLUEPILL_F103CB,xserial=disabled,usb=HID,xusb=FS,opt=oslto,dbg=none,rtlib=nano,upload_method=swdMethod" \
+            --libraries . examples/STM32F103_Keyboard_MVP

@@ -126,7 +126,7 @@ Derive from `via::Callbacks` only for application hooks you need:
   successful stored/default startup load, direct load, or factory reset
 - `changed()`: mutable protocol state changed
 - `bootloaderJump()`: runs only from `task()`, after an enabled bootloader
-  command response is sent successfully
+  command response transfer completes
 
 ## Supported Commands
 
@@ -144,6 +144,8 @@ Derive from `via::Callbacks` only for application hooks you need:
 | `0x14`-`0x15` | Encoder keycode get/set |
 
 Unsupported commands and invalid gated operations return `0xFF` in byte 0.
+Bootloader command acceptance also requires a callback and, when state is dirty,
+a successful save. Clean state remains bootable without `Storage`.
 An enabled factory reset publishes defaults and invokes state callbacks only
 after storage erase, replacement writes, and commit all succeed. Custom-state
 validation rejection happens before erase and leaves storage, dirty state, live

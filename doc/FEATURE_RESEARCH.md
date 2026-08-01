@@ -45,8 +45,9 @@ must reconfigure and save a version 2 record.
 ## Sensitive Operations
 
 Matrix disclosure, EEPROM reset (`0x0A`), and bootloader jump (`0x0B`) are
-independent opt-ins. Bootloader callbacks are deferred until `task()` sends the
-response successfully; direct `process()` never invokes the callback.
+independent opt-ins. Bootloader acceptance requires a callback and persists
+dirty state first. Callbacks are deferred until the transport reports the
+accepted response complete; direct `process()` saves or rejects but never jumps.
 
 ## Platform Evidence
 

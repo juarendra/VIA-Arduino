@@ -2,20 +2,6 @@
 
 ## [Unreleased]
 
-### Added
-
-- `CustomValue::validateState()` provides non-mutating validation before staged
-  custom state is published or factory-reset storage is changed.
-
-### Migration
-
-- Custom-value handlers that can reject persisted bytes must move that decision
-  into a `const`, non-mutating `validateState()` override. Returning `true`
-  guarantees the following `loadState()` for those bytes succeeds and publishes
-  them; returning `false` from `loadState()` must still leave active state
-  unchanged. Handlers needing only exact `stateSize()` validation can use the
-  default implementation unchanged.
-
 ## 0.2.0 - 2026-08-01
 
 ### Added
@@ -23,9 +9,14 @@
 - Persistent 32-bit layout options and per-layer encoder maps through commands
   `0x02/0x02`, `0x03/0x02`, `0x14`, and `0x15`.
 - Generic custom-value save routing and explicit custom-state size validation.
+- `CustomValue::validateState()` provides non-mutating validation before staged
+  custom state is published or factory-reset storage is changed.
 - RP2040 Adafruit TinyUSB Raw HID and boot-keyboard adapters, plus an EEPROM
   storage adapter; these adapters are compile-tested, not hardware-certified.
 - Response retrying so a request is not consumed again after a failed send.
+- `Transport::sendComplete()` lets asynchronous adapters report when an accepted
+  response transfer has completed; synchronous adapters inherit immediate
+  completion.
 
 ### Changed
 
@@ -45,8 +36,9 @@
 
 - Matrix-state disclosure now requires `Config::matrixStateEnabled = true`.
 - EEPROM factory reset now requires `Config::eepromResetEnabled = true`.
-- Bootloader jump now requires `Config::bootloaderEnabled = true`, and its
-  callback runs only after `task()` successfully sends the response.
+- Bootloader jump requires `Config::bootloaderEnabled = true`, a callback, and a
+  successful dirty-state save. Its callback runs only after the transport
+  reports the accepted response transfer complete.
 
 ### Migration
 
@@ -63,6 +55,12 @@
   state; callers must keep that state separate as documented in `PORTING.md`.
 - Set each security flag deliberately if upgrading code relied on matrix
   disclosure, factory reset, or bootloader jump being available.
+- Custom-value handlers that can reject persisted bytes must move that decision
+  into a `const`, non-mutating `validateState()` override. Returning `true`
+  guarantees the following `loadState()` for those bytes succeeds and publishes
+  them; returning `false` from `loadState()` must still leave active state
+  unchanged. Handlers needing only exact `stateSize()` validation can use the
+  default implementation unchanged.
 - Applications remain responsible for matrix scanning and executing returned
   QMK/VIA keycodes as HID reports.
 

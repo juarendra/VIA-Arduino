@@ -96,3 +96,41 @@
 - [ ] Document migration for custom handlers that reject persisted state.
 - [ ] Run WSL warnings-as-errors and ASan/UBSan suites, push, and verify GitHub CI.
 - [ ] Record RED/GREEN evidence, commits, CI, and concerns in the Task 8 report.
+
+### Task 9: Boot Response Transfer Completion
+
+**Files:**
+- Modify: `src/VIA_Protocol.h`
+- Modify: `src/VIA_Protocol.cpp`
+- Modify: `src/VIA_TinyUSB_RawHID.h`
+- Modify: `src/VIA_TinyUSB_RawHID.cpp`
+- Modify: `tests/protocol_test.cpp`
+- Modify: `README.md`
+- Modify: `CHANGELOG.md`
+- Modify: `docs/PORTING.md`
+- Modify: `doc/FEATURE_RESEARCH.md`
+- Create: `.superpowers/sdd/2026-08-01-protocol-correctness/task-9-report.md`
+
+**Interfaces:**
+- Adds source-compatible virtual `Transport::sendComplete()` with synchronous
+  completion by default.
+- TinyUSB reports completion by polling `hid_.ready()` only after `send()` has
+  accepted the response; no global completion callback or timeout is used.
+- Boot command acceptance requires enabled policy, a callback, and successful
+  persistence of dirty state.
+
+- [ ] Add and push deterministic failing completion, retry, ordering, and boot
+  persistence-gate tests before production code.
+- [ ] Distinguish an unsent response from an accepted in-flight boot response;
+  never resend an accepted response and clear boot state before jumping once.
+- [ ] Override TinyUSB completion with endpoint readiness polling and preserve
+  existing synchronous adapters through the default implementation.
+- [ ] Reject disabled or callback-less boot requests and dirty-state save
+  failures; keep clean no-storage requests bootable and direct processing
+  non-jumping.
+- [ ] Move `validateState()` additions and migration notes from `[Unreleased]`
+  into `0.2.0`.
+- [ ] Run WSL warnings-as-errors and ASan/UBSan suites, push, and verify complete
+  GitHub CI including the RP2040 TinyUSB reference compile.
+- [ ] Record root cause, RED/GREEN evidence, commits, CI, and concerns in the
+  Task 9 report.

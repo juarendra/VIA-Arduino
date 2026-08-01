@@ -28,10 +28,19 @@ class MyRawHidTransport : public via::Transport {
     // Return true only after reading exactly 32 bytes from the OUT endpoint.
   }
   bool send(const uint8_t packet[via::kPacketSize]) override {
-    // Send exactly 32 bytes to the IN endpoint.
+    // Return true once exactly 32 bytes are accepted by the IN endpoint.
+  }
+  bool sendComplete() override {
+    // Return false while that accepted transfer remains in flight.
   }
 };
 ```
+
+`Protocol` retries the same response only while `send()` returns false. It calls
+`sendComplete()` only after a true return. Synchronous transports can omit the
+override and inherit immediate completion; asynchronous transports must report
+endpoint completion. A disconnected asynchronous endpoint therefore leaves a
+boot response pending rather than jumping or relying on a timeout.
 
 Call `keyboard.task(millis())` often from `loop()`. It receives one request,
 updates the supplied buffer as the VIA response, and sends it back.
@@ -145,8 +154,10 @@ changes, and `bootloaderJump()` for a platform reset action.
 
 Matrix disclosure, EEPROM reset, and bootloader jump default to disabled. Set
 only the corresponding `Config` boolean after reviewing the application's
-security requirements. A bootloader callback runs only after `task()` sends
-the response successfully.
+security requirements. Bootloader acceptance also requires a callback and a
+successful save when state is dirty. Its callback runs only after `task()` sees
+the accepted response transfer complete; direct `process()` saves or rejects
+but never jumps.
 
 ## 5. Connect physical features
 

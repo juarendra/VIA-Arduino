@@ -6,23 +6,25 @@ namespace {
 class FakeMatrixIO : public via::MatrixIO {
  public:
   FakeMatrixIO() : inputPullupCalls(0), driveLowCalls(0), releaseCalls(0),
-                   readCalls(0), delayMicrosecondsCalls(0), readValue(false) {}
+                    readCalls(0), delayMicrosecondsCalls(0), readValue(false) {
+    for (uint8_t i = 0; i < sizeof(pinStates); ++i) pinStates[i] = true;
+  }
 
   void inputPullup(via::Pin pin) override {
     ++inputPullupCalls;
-    if (pin < sizeof(pinStates)) pinStates[pin] = true;
+    pinStates[pin & 0x1F] = true;
   }
   void driveLow(via::Pin pin) override {
     ++driveLowCalls;
-    if (pin < sizeof(pinStates)) pinStates[pin] = false;
+    pinStates[pin & 0x1F] = false;
   }
   void release(via::Pin pin) override {
     ++releaseCalls;
-    if (pin < sizeof(pinStates)) pinStates[pin] = true;
+    pinStates[pin & 0x1F] = true;
   }
   bool read(via::Pin pin) override {
     ++readCalls;
-    return (pin < sizeof(pinStates)) ? pinStates[pin] : false;
+    return pinStates[pin & 0x1F];
   }
   void delayMicroseconds(uint16_t us) override {
     ++delayMicrosecondsCalls;
@@ -63,7 +65,7 @@ int main() {
     uint32_t stable[2] = {0, 0};
     uint32_t changed[2] = {0, 0};
     FakeMatrixIO scanIO;
-    scanIO.pinStates[200] = false;
+    scanIO.pinStates[200 & 0x1F] = false;
     via::MatrixConfig scanCfg = {2, 3, rowPins, colPins, via::kColToRow, 30, 5,
                                  rawRows, candidate, stable, changed};
     via::Matrix scanMatrix(scanCfg, scanIO);

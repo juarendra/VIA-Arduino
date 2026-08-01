@@ -38,7 +38,7 @@ class Matrix {
 
   bool begin() { return !(config_.rows == 0 || config_.columns == 0); }
 
-  void task(uint32_t) {}
+  void task(uint32_t ms);
 
   uint32_t rawRow(uint8_t r) const { return config_.rawRows[r]; }
   uint32_t stableRows() const { return 0; }

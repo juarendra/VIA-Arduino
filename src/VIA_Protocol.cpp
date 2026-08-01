@@ -45,7 +45,8 @@ Protocol::Protocol(const Config& config, Transport& transport, Storage* storage,
       dirty_(false),
       saveAt_(0),
       layoutOptions_(config.defaultLayoutOptions),
-      responsePending_(false) {}
+      responsePending_(false),
+      bootloaderPending_(false) {}
 
 bool Protocol::begin(uint32_t nowMs) {
   size_t bytes;
@@ -67,12 +68,16 @@ bool Protocol::begin(uint32_t nowMs) {
 
 void Protocol::task(uint32_t nowMs) {
   if (!responsePending_ && transport_.receive(pendingResponse_)) {
-    process(pendingResponse_, nowMs);
+    const bool bootloaderRequest = pendingResponse_[0] == 0x0B &&
+                                   config_.bootloaderEnabled;
+    const bool processed = process(pendingResponse_, nowMs);
+    bootloaderPending_ = bootloaderRequest && processed;
     responsePending_ = true;
   }
   if (responsePending_ && transport_.send(pendingResponse_)) {
-    const bool bootloader = pendingResponse_[0] == 0x0B;
+    const bool bootloader = bootloaderPending_;
     responsePending_ = false;
+    bootloaderPending_ = false;
     if (bootloader && callbacks_) callbacks_->bootloaderJump();
   }
   if (dirty_ && static_cast<int32_t>(nowMs - saveAt_) >= 0) save();

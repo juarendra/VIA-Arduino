@@ -159,6 +159,7 @@ class Protocol {
   uint32_t layoutOptions_;
   uint8_t pendingResponse_[kPacketSize];
   bool responsePending_;
+  bool bootloaderPending_;
 };
 
 }  // namespace via

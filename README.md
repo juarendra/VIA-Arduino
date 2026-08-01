@@ -79,6 +79,11 @@ operation, while `true` guarantees that `loadState()` for the same bytes
 succeeds and publishes them. `loadState()` must remain non-mutating when it
 returns `false`.
 
+`load()` reads the complete payload once into this workspace, then checks CRC
+and custom state against those exact bytes before publishing them. A successful
+load publishes callbacks and then clears dirty state; a failed load preserves
+the prior dirty flag and active state.
+
 ```cpp
 uint8_t macros[64];
 uint8_t storageBytes[128];

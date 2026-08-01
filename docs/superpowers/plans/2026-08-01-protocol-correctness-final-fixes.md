@@ -134,3 +134,39 @@
   GitHub CI including the RP2040 TinyUSB reference compile.
 - [ ] Record root cause, RED/GREEN evidence, commits, CI, and concerns in the
   Task 9 report.
+
+### Task 10: Final Integration Lifetimes
+
+**Files:**
+- Modify: `src/VIA_Protocol.cpp`
+- Modify: `src/VIA_TinyUSB_RawHID.h`
+- Modify: `src/VIA_TinyUSB_RawHID.cpp`
+- Modify: `tests/protocol_test.cpp`
+- Add: `tests/fakes/Adafruit_TinyUSB.h`
+- Add: `tests/tinyusb_rawhid_test.cpp`
+- Modify: `.github/workflows/ci.yml`
+- Modify: `README.md`
+- Modify: `CHANGELOG.md`
+- Modify: `docs/PORTING.md`
+- Create: `.superpowers/sdd/2026-08-01-protocol-correctness/task-10-report.md`
+
+**Interfaces:**
+- Keeps mandatory caller-owned full `Config::loadBuffer` and all public method
+  signatures source-compatible.
+- Gives `RawHID` an owning destructor while preserving one instance per USB
+  device and provisional callback registration during `begin()`.
+
+- [ ] Add and push failing tests for changing storage reads, successful and
+  failed load dirty state, failed TinyUSB initialization replacement, and owner
+  destruction replacement before production code.
+- [ ] Read each payload once into `loadBuffer`; check CRC and custom state on
+  those exact bytes before publishing live state or callbacks.
+- [ ] Clear dirty state only after successful load state/callback publication;
+  preserve it on every failure.
+- [ ] Clear `RawHID::active_` only from its owner destructor and roll back a
+  provisional owner when `hid_.begin()` fails.
+- [ ] Document staged-load and one-instance/device-lifetime contracts.
+- [ ] Run WSL C++11 warnings-as-errors and ASan/UBSan suites, compile RP2040,
+  push periodically, and verify complete GitHub CI.
+- [ ] Record status, RED/GREEN/CI evidence, commits, and concerns in Task 10
+  report.

@@ -31,6 +31,11 @@
 - Keymap reset (`0x06`) also restores default encoder maps but no longer clears
   macros. Macro reset (`0x10`) clears only macros.
 - Persistence validates record size and CRC before changing active state.
+- Persistence reads each record payload once into caller staging, validates and
+  publishes those same bytes, clears dirty state on success, and preserves it on
+  failure.
+- RP2040 Raw HID releases its single callback owner after failed initialization
+  or owner destruction so a replacement instance can initialize.
 
 ### Security
 

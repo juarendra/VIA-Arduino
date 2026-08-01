@@ -58,6 +58,11 @@ using the Earle Philhower Arduino-Pico core with **Tools → USB Stack → Adafr
 TinyUSB**. Install **Adafruit TinyUSB Library**, create `via::tinyusb::RawHID`,
 call `begin()` before USB enumeration, and pass it to `via::Protocol`.
 
+Only one successfully begun `RawHID` instance is supported per USB device. Keep
+that instance alive for the device lifetime. A failed `begin()` releases the
+registration so another instance can initialize; destroying the owning instance
+also releases it.
+
 The reference adapter deliberately provides only the vendor Raw HID interface.
 Create a second TinyUSB HID interface for keyboard reports in the application;
 the two interfaces must not share report IDs. See
@@ -109,6 +114,11 @@ state owned by a `CustomValue`
 implementation; the caller must keep that state outside this workspace. The
 implementation must also leave active state unchanged when `loadState()`
 returns false. Configurations without `Storage` do not need a load workspace.
+
+`load()` performs one payload read into this workspace. CRC and custom-state
+validation cover those exact staged bytes before any active state changes. On
+success, state and layout callbacks publish before dirty state clears; every
+failure preserves active state, callbacks, and the previous dirty flag.
 
 `CustomValue::validateState(const uint8_t*, size_t) const` checks staged custom
 bytes without mutating active state. The default accepts exactly `stateSize()`

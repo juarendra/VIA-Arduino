@@ -422,6 +422,10 @@ bool Protocol::load() {
   offset += sizeof(layoutOptions_);
   staged += sizeof(layoutOptions_);
   if (customSize && !storage_->read(offset, config_.loadBuffer + staged, customSize)) return false;
+  if (customSize &&
+      !customValue_->validateState(config_.loadBuffer + staged, customSize)) {
+    return false;
+  }
   if (customSize && !customValue_->loadState(config_.loadBuffer + staged, customSize)) {
     return false;
   }
@@ -501,6 +505,12 @@ bool Protocol::factoryReset() {
          sizeof(config_.defaultLayoutOptions));
   staged += sizeof(config_.defaultLayoutOptions);
   if (customSize) memset(config_.loadBuffer + staged, 0, customSize);
+  const size_t customOffset = bytes - customSize;
+  if (customSize &&
+      !customValue_->validateState(config_.loadBuffer + customOffset,
+                                   customSize)) {
+    return false;
+  }
 
   uint32_t crc = 0xFFFFFFFFUL;
   for (size_t i = 0; i < bytes; ++i) crc = crc32Update(crc, config_.loadBuffer[i]);
@@ -515,10 +525,8 @@ bool Protocol::factoryReset() {
   if (!storage_->write(0, reinterpret_cast<const uint8_t*>(&header), sizeof(header)) ||
       !storage_->commit()) return false;
 
-  const size_t customOffset = bytes - customSize;
-  if (customSize &&
-      !customValue_->loadState(config_.loadBuffer + customOffset, customSize)) {
-    return false;
+  if (customSize) {
+    (void)customValue_->loadState(config_.loadBuffer + customOffset, customSize);
   }
   staged = 0;
   memcpy(config_.keymap, config_.loadBuffer + staged, keymapBytes());

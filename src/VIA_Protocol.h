@@ -41,8 +41,13 @@ class CustomValue {
   virtual bool save(uint8_t packet[kPacketSize]) { return packet[1] == 0x02; }
   virtual size_t stateSize() const { return 0; }
   virtual bool saveState(uint8_t*, size_t) const { return true; }
-  // The load workspace must not alias active custom state. Implementations must
-  // leave active state unchanged when returning false.
+  // Validation must not mutate active state. Returning true guarantees that
+  // loadState() succeeds and publishes the same bytes.
+  virtual bool validateState(const uint8_t*, size_t length) const {
+    return length == stateSize();
+  }
+  // The load workspace must not alias active custom state. Returning false
+  // must leave active state unchanged.
   virtual bool loadState(const uint8_t*, size_t) { return true; }
 };
 

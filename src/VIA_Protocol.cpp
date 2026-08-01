@@ -396,45 +396,24 @@ bool Protocol::load() {
       header.magic != kStateMagic || header.version != kStateVersion ||
       header.payloadSize != bytes) return false;
 
-  uint8_t state[kMaxCustomStateSize];
-  size_t offset = sizeof(header);
-  size_t remaining = bytes;
+  if (!storage_->read(sizeof(header), config_.loadBuffer, bytes)) return false;
   uint32_t crc = 0xFFFFFFFFUL;
-  while (remaining) {
-    const size_t chunk = remaining < sizeof(state) ? remaining : sizeof(state);
-    if (!storage_->read(offset, state, chunk)) return false;
-    for (size_t i = 0; i < chunk; ++i) crc = crc32Update(crc, state[i]);
-    offset += chunk;
-    remaining -= chunk;
+  for (size_t i = 0; i < bytes; ++i) {
+    crc = crc32Update(crc, config_.loadBuffer[i]);
   }
   if (~crc != header.crc) return false;
 
-  offset = sizeof(header);
-  size_t staged = 0;
-  if (!storage_->read(offset, config_.loadBuffer + staged, keymapBytes())) return false;
-  offset += keymapBytes();
-  staged += keymapBytes();
-  if (encoderMapBytes() &&
-      !storage_->read(offset, config_.loadBuffer + staged,
-                      encoderMapBytes())) return false;
-  offset += encoderMapBytes();
-  staged += encoderMapBytes();
-  if (config_.macroBytes &&
-      !storage_->read(offset, config_.loadBuffer + staged, config_.macroBytes)) return false;
-  offset += config_.macroBytes;
-  staged += config_.macroBytes;
-  if (!storage_->read(offset, config_.loadBuffer + staged, sizeof(layoutOptions_))) return false;
-  offset += sizeof(layoutOptions_);
-  staged += sizeof(layoutOptions_);
-  if (customSize && !storage_->read(offset, config_.loadBuffer + staged, customSize)) return false;
+  const size_t customOffset = bytes - customSize;
   if (customSize &&
-      !customValue_->validateState(config_.loadBuffer + staged, customSize)) {
+      !customValue_->validateState(config_.loadBuffer + customOffset,
+                                   customSize)) {
     return false;
   }
-  if (customSize && !customValue_->loadState(config_.loadBuffer + staged, customSize)) {
+  if (customSize &&
+      !customValue_->loadState(config_.loadBuffer + customOffset, customSize)) {
     return false;
   }
-  staged = 0;
+  size_t staged = 0;
   memcpy(config_.keymap, config_.loadBuffer + staged, keymapBytes());
   staged += keymapBytes();
   if (encoderMapBytes()) {
@@ -447,6 +426,7 @@ bool Protocol::load() {
   staged += config_.macroBytes;
   memcpy(&layoutOptions_, config_.loadBuffer + staged, sizeof(layoutOptions_));
   if (callbacks_) callbacks_->layoutOptionsChanged(layoutOptions_);
+  dirty_ = false;
   return true;
 }
 

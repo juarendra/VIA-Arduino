@@ -17,6 +17,7 @@ namespace tinyusb {
 class RawHID : public Transport {
  public:
   RawHID();
+  ~RawHID();
   bool begin(const char* interfaceName = "VIA Raw HID");
   bool receive(uint8_t packet[kPacketSize]) override;
   bool send(const uint8_t packet[kPacketSize]) override;

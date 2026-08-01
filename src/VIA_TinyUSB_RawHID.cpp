@@ -37,6 +37,10 @@ RawHID::RawHID()
   memset(rx_, 0, sizeof(rx_));
 }
 
+RawHID::~RawHID() {
+  if (active_ == this) active_ = nullptr;
+}
+
 bool RawHID::begin(const char* interfaceName) {
   if (active_ && active_ != this) return false;
   active_ = this;
@@ -45,7 +49,9 @@ bool RawHID::begin(const char* interfaceName) {
   hid_.setPollInterval(2);
   hid_.setStringDescriptor(interfaceName);
   hid_.setReportCallback(nullptr, setReport);
-  return hid_.begin();
+  if (hid_.begin()) return true;
+  if (active_ == this) active_ = nullptr;
+  return false;
 }
 
 bool RawHID::receive(uint8_t packet[kPacketSize]) {

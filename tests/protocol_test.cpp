@@ -200,6 +200,15 @@ class ChannelSevenCustomValue : public via::CustomValue {
   uint8_t saveCalls;
 };
 
+class BootloaderShapedResponseCustomValue : public via::CustomValue {
+ public:
+  bool set(uint8_t[via::kPacketSize]) override { return false; }
+  bool get(uint8_t packet[via::kPacketSize]) override {
+    packet[0] = 0x0B;
+    return true;
+  }
+};
+
 class LegacyCustomValue : public via::CustomValue {
  public:
   LegacyCustomValue() : setCalls(0), getCalls(0) {}
@@ -900,6 +909,26 @@ void assertBootloaderWaitsForSuccessfulSend() {
   assert(callbacks.bootloaderCalls == 1);
 }
 
+void assertCustomResponseCannotTriggerBootloader() {
+  uint16_t keymap[1] = {};
+  const uint16_t defaults[1] = {};
+  via::MemoryTransport transport;
+  BootloaderShapedResponseCustomValue customValue;
+  SecurityCallbacks callbacks;
+  via::Config config = {1, 1, 1, keymap, defaults};
+  via::Protocol keyboard(config, transport, nullptr, &customValue, &callbacks);
+  assert(keyboard.begin(0));
+
+  const uint8_t request[via::kPacketSize] = {0x08, 7};
+  transport.inject(request);
+  keyboard.task(1);
+
+  uint8_t response[via::kPacketSize];
+  assert(transport.takeResponse(response));
+  assert(response[0] == 0x0B);
+  assert(callbacks.bootloaderCalls == 0);
+}
+
 }  // namespace
 
 int main() {
@@ -931,6 +960,7 @@ int main() {
   assertSensitiveCommandsAreOptIn();
   assertFailedSendRetriesWithoutReprocessing();
   assertBootloaderWaitsForSuccessfulSend();
+  assertCustomResponseCannotTriggerBootloader();
 
   uint16_t keymap[4] = {0x0004, 0x0005, 0x0014, 0x001A};
   const uint16_t defaults[4] = {0x0004, 0x0005, 0x0014, 0x001A};

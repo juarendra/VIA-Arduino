@@ -39,6 +39,16 @@ jobs:
             src/VIA_Protocol.cpp src/VIA_RGBLight.cpp -o keyboard_test_san && \
             ./keyboard_test_san
 
+  descriptor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run descriptor tests
+        run: |
+          g++ -std=c++11 -Wall -Wextra -Werror -Isrc \
+            tests/usb_descriptor_test.cpp -o usb_descriptor_test && \
+            ./usb_descriptor_test
+
   matrix:
     runs-on: ubuntu-latest
     steps:

@@ -116,7 +116,6 @@ class Keyboard {
   uint32_t stableRow(uint8_t row) const;
 
  private:
-  void buildAndSend();
   KeyboardReport buildReport() const;
 
   const KeyboardConfig& config_;
@@ -126,6 +125,12 @@ class Keyboard {
   uint16_t* activeCodes_;
   KeyboardCallbacks* callbacks_;
   LayerState layerState_;
+  KeyboardReport pendingReport_ = {};
+  bool reportPending_ = false;
+  KeyboardReport lastAcceptedReport_ = {};
+  uint8_t lastHostLeds_ = 0;
+  bool wakeRequested_ = false;
+  bool wasSuspended_ = false;
 };
 
 }  // namespace via

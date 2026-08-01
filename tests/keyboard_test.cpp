@@ -29,10 +29,11 @@ class FakeKeyboardHID : public via::KeyboardHID {
   uint32_t sendCalls = 0, completeCalls = 0, wakeCalls = 0;
   via::KeyboardReport lastReport;
   uint8_t hostLeds = 0;
+  bool hasLeds_ = false;
   bool configured() const override { return _configured; }
   bool send(const via::KeyboardReport& r) override { sendCalls++; lastReport = r; return sendResult; }
   bool sendComplete() override { completeCalls++; return completeResult; }
-  bool takeHostLeds(uint8_t& l) override { l = hostLeds; hostLeds = 0; return true; }
+  bool takeHostLeds(uint8_t& l) override { l = hostLeds; bool had = hasLeds_; hostLeds = 0; hasLeds_ = false; return had; }
   bool suspended() const override { return _suspended; }
   bool remoteWakeupAllowed() const override { return _wakeAllowed; }
   bool remoteWakeup() override { wakeCalls++; return true; }
@@ -53,18 +54,22 @@ int main() {
 
   {
     FakeKeyboardHID hid;
+    hid.hasLeds_ = true;
     uint8_t leds = 0xFF;
     assert(hid.takeHostLeds(leds));
     assert(leds == 0);
+    assert(!hid.hasLeds_);
   }
 
   {
     FakeKeyboardHID hid;
     hid.hostLeds = 0x02;
+    hid.hasLeds_ = true;
     uint8_t leds = 0;
     assert(hid.takeHostLeds(leds));
     assert(leds == 0x02);
     assert(hid.hostLeds == 0);
+    assert(!hid.hasLeds_);
   }
 
   {
@@ -535,6 +540,245 @@ int main() {
     matrix.task(0);
     keyboard.task(0);
     for (int i = 0; i < 6; ++i) assert(hid.lastReport.keys[i] == 0x01);
+  }
+
+  // --- Task 10: Coalesce, Retry, LED, Suspend ---
+
+  // Busy send: hid.sendResult=false then true; report sent exactly once with latest wanted state
+  {
+    uint16_t km[6]; memcpy(km, defaultKm, sizeof(km));
+    via::Config pc(kRows, kCols, 1, km, km, nullptr, 0, 0, 0, 0, 0,
+                   0, nullptr, nullptr, nullptr, 0);
+    via::Protocol proto(pc, transport);
+    assert(proto.begin(0));
+
+    via::Pin rp[2] = {100, 101}, cp[3] = {200, 201, 202};
+    uint32_t raw[2] = {0,0}, cnd[2] = {0,0}, stb[2] = {0,0}, chg[2] = {0,0};
+    FakeMatrixIO io;
+    via::MatrixConfig mc = {kRows, kCols, rp, cp, via::kColToRow, 30, 0,
+                            raw, cnd, stb, chg};
+    via::Matrix matrix(mc, io);
+    assert(matrix.begin());
+
+    FakeKeyboardHID hid;
+    hid.sendResult = false;
+    hid.completeResult = false;
+    uint16_t ac[6] = {0};
+    via::Keyboard keyboard(via::KeyboardConfig{kRows, kCols}, matrix, proto, hid, ac);
+    assert(keyboard.begin());
+
+    io.keyMap[100 & 0x1F] = (1U << 0); // press A
+    matrix.task(0);
+    keyboard.task(0);
+    assert(ac[0] == 0x0004);
+    assert(hid.sendCalls == 1); // tried to send, failed
+    assert(hid.lastReport.keys[0] == 0x04);
+
+    // No change on next scan — still in flight, retry send
+    matrix.task(10);
+    keyboard.task(10);
+    assert(hid.sendCalls == 2); // retried once
+    assert(hid.lastReport.keys[0] == 0x04);
+
+    // Press B while A still pending, send still failing
+    io.keyMap[100 & 0x1F] |= (1U << 1); // press B alongside A
+    hid.sendResult = false;
+    matrix.task(20);
+    keyboard.task(20);
+    assert(ac[1] == 0x0005); // B now active
+    // Should rebuild because state changed (B added), coalesce with A
+    assert(hid.lastReport.keys[0] == 0x04);
+    assert(hid.lastReport.keys[1] == 0x05);
+
+    // Now succeed — send returns true, complete returns true
+    hid.sendResult = true;
+    hid.completeResult = true;
+    matrix.task(30);
+    keyboard.task(30);
+    // After sendComplete=true, report accepted. No changes → no more sends.
+    int callsAfterAccept = hid.sendCalls;
+    matrix.task(40);
+    keyboard.task(40);
+    assert(hid.sendCalls == callsAfterAccept);
+  }
+
+  // sendComplete() false while in-flight: task blocks next scan cycle
+  {
+    uint16_t km[6]; memcpy(km, defaultKm, sizeof(km));
+    via::Config pc(kRows, kCols, 1, km, km, nullptr, 0, 0, 0, 0, 0,
+                   0, nullptr, nullptr, nullptr, 0);
+    via::Protocol proto(pc, transport);
+    assert(proto.begin(0));
+
+    via::Pin rp[2] = {100, 101}, cp[3] = {200, 201, 202};
+    uint32_t raw[2] = {0,0}, cnd[2] = {0,0}, stb[2] = {0,0}, chg[2] = {0,0};
+    FakeMatrixIO io;
+    via::MatrixConfig mc = {kRows, kCols, rp, cp, via::kColToRow, 30, 0,
+                            raw, cnd, stb, chg};
+    via::Matrix matrix(mc, io);
+    assert(matrix.begin());
+
+    FakeKeyboardHID hid;
+    hid.completeResult = false; // transfer still in flight
+    uint16_t ac[6] = {0};
+    via::Keyboard keyboard(via::KeyboardConfig{kRows, kCols}, matrix, proto, hid, ac);
+    assert(keyboard.begin());
+
+    io.keyMap[100 & 0x1F] = (1U << 0);
+    matrix.task(0);
+    keyboard.task(0);
+    assert(ac[0] == 0x0004);
+    uint32_t sendCount = hid.sendCalls;
+
+    // In-flight — task should skip reprocessing, retry send without rebuilding
+    matrix.task(10);
+    keyboard.task(10);
+    assert(hid.sendCalls == sendCount + 1); // one retry
+
+    // Now complete, same report — no new send
+    hid.completeResult = true;
+    matrix.task(20);
+    keyboard.task(20);
+    uint32_t afterAccept = hid.sendCalls;
+    matrix.task(30);
+    keyboard.task(30);
+    assert(hid.sendCalls == afterAccept); // no extra send, report already accepted
+  }
+
+  // Host LED: inject 0x03 (Num+Caps), assert callback receives 0x03
+  {
+    class LEDCallback : public via::KeyboardCallbacks {
+     public:
+      uint8_t lastLeds = 0xFF; // sentinel
+      int ledCalls = 0;
+      void hostLedsChanged(uint8_t leds) override { lastLeds = leds; ledCalls++; }
+    };
+    LEDCallback cb;
+
+    uint16_t km[6]; memcpy(km, defaultKm, sizeof(km));
+    via::Config pc(kRows, kCols, 1, km, km, nullptr, 0, 0, 0, 0, 0,
+                   0, nullptr, nullptr, nullptr, 0);
+    via::Protocol proto(pc, transport);
+    assert(proto.begin(0));
+
+    via::Pin rp[2] = {100, 101}, cp[3] = {200, 201, 202};
+    uint32_t raw[2] = {0,0}, cnd[2] = {0,0}, stb[2] = {0,0}, chg[2] = {0,0};
+    FakeMatrixIO io;
+    via::MatrixConfig mc = {kRows, kCols, rp, cp, via::kColToRow, 30, 0,
+                            raw, cnd, stb, chg};
+    via::Matrix matrix(mc, io);
+    assert(matrix.begin());
+
+    FakeKeyboardHID hid;
+    uint16_t ac[6] = {0};
+    via::Keyboard keyboard(via::KeyboardConfig{kRows, kCols}, matrix, proto, hid, ac, &cb);
+    assert(keyboard.begin());
+
+    // No matrix changes, but LEDs arrive
+    hid.hostLeds = 0x03;
+    hid.hasLeds_ = true;
+    keyboard.task(0);
+    assert(cb.ledCalls == 1);
+    assert(cb.lastLeds == 0x03);
+
+    // Same LED value — no callback fired again
+    hid.hostLeds = 0x03;
+    hid.hasLeds_ = true;
+    keyboard.task(10);
+    assert(cb.ledCalls == 1);
+
+    // LED change
+    hid.hostLeds = 0x01;
+    hid.hasLeds_ = true;
+    keyboard.task(20);
+    assert(cb.ledCalls == 2);
+    assert(cb.lastLeds == 0x01);
+  }
+
+  // Suspend: press key, no send, wake requested once; second press no duplicate wake
+  {
+    uint16_t km[6]; memcpy(km, defaultKm, sizeof(km));
+    via::Config pc(kRows, kCols, 1, km, km, nullptr, 0, 0, 0, 0, 0,
+                   0, nullptr, nullptr, nullptr, 0);
+    via::Protocol proto(pc, transport);
+    assert(proto.begin(0));
+
+    via::Pin rp[2] = {100, 101}, cp[3] = {200, 201, 202};
+    uint32_t raw[2] = {0,0}, cnd[2] = {0,0}, stb[2] = {0,0}, chg[2] = {0,0};
+    FakeMatrixIO io;
+    via::MatrixConfig mc = {kRows, kCols, rp, cp, via::kColToRow, 30, 0,
+                            raw, cnd, stb, chg};
+    via::Matrix matrix(mc, io);
+    assert(matrix.begin());
+
+    FakeKeyboardHID hid;
+    hid._suspended = true;
+    hid._wakeAllowed = true;
+    uint16_t ac[6] = {0};
+    via::Keyboard keyboard(via::KeyboardConfig{kRows, kCols}, matrix, proto, hid, ac);
+    assert(keyboard.begin());
+
+    io.keyMap[100 & 0x1F] = (1U << 0); // press A while suspended
+    matrix.task(0);
+    keyboard.task(0);
+    assert(ac[0] == 0x0004);
+    assert(hid.sendCalls == 0);       // no send while suspended
+    assert(hid.wakeCalls == 1);       // wake requested once
+
+    // Second press while still suspended — no duplicate wake
+    io.keyMap[100 & 0x1F] = (1U << 1); // press B
+    matrix.task(10);
+    keyboard.task(10);
+    assert(hid.wakeCalls == 1); // still 1
+
+    // Release — no send, no extra wake
+    io.keyMap[100 & 0x1F] = 0;
+    matrix.task(20);
+    keyboard.task(20);
+    assert(hid.sendCalls == 0);
+    assert(hid.wakeCalls == 1);
+  }
+
+  // Resume: clear suspend, assert report is rebuilt and sent
+  {
+    uint16_t km[6]; memcpy(km, defaultKm, sizeof(km));
+    via::Config pc(kRows, kCols, 1, km, km, nullptr, 0, 0, 0, 0, 0,
+                   0, nullptr, nullptr, nullptr, 0);
+    via::Protocol proto(pc, transport);
+    assert(proto.begin(0));
+
+    via::Pin rp[2] = {100, 101}, cp[3] = {200, 201, 202};
+    uint32_t raw[2] = {0,0}, cnd[2] = {0,0}, stb[2] = {0,0}, chg[2] = {0,0};
+    FakeMatrixIO io;
+    via::MatrixConfig mc = {kRows, kCols, rp, cp, via::kColToRow, 30, 0,
+                            raw, cnd, stb, chg};
+    via::Matrix matrix(mc, io);
+    assert(matrix.begin());
+
+    FakeKeyboardHID hid;
+    hid._suspended = true;
+    hid._wakeAllowed = true;
+    uint16_t ac[6] = {0};
+    via::Keyboard keyboard(via::KeyboardConfig{kRows, kCols}, matrix, proto, hid, ac);
+    assert(keyboard.begin());
+
+    // Press key while suspended
+    io.keyMap[100 & 0x1F] = (1U << 0);
+    matrix.task(0);
+    keyboard.task(0);
+    assert(hid.sendCalls == 0);
+    assert(hid.wakeCalls == 1);
+
+    // Clear suspend — host wakes us
+    hid._suspended = false;
+    // Force a matrix change so task processes
+    io.keyMap[100 & 0x1F] = (1U << 0); // still held
+    matrix.task(10);
+    keyboard.task(10);
+    // After resume, report should be rebuilt and sent
+    assert(hid.sendCalls == 1);
+    assert(hid.lastReport.keys[0] == 0x04);
+    assert(hid.wakeCalls == 1); // no new wake
   }
 
   // Test 6: stableRow passthrough

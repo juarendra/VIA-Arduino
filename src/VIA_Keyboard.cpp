@@ -2,6 +2,7 @@
 #include "VIA_Matrix.h"
 #include "VIA_Protocol.h"
 #include "VIA_Keycodes.h"
+#include <string.h>
 
 namespace via {
 
@@ -22,10 +23,31 @@ uint32_t Keyboard::stableRow(uint8_t row) const {
 }
 
 void Keyboard::task(uint32_t /*now*/) {
+  uint8_t leds;
+  while (hid_.takeHostLeds(leds)) {
+    if (callbacks_ && leds != lastHostLeds_) {
+      lastHostLeds_ = leds;
+      callbacks_->hostLedsChanged(leds);
+    }
+  }
+
+  if (reportPending_) {
+    if (hid_.sendComplete()) {
+      lastAcceptedReport_ = pendingReport_;
+      reportPending_ = false;
+    } else {
+      hid_.send(pendingReport_);
+    }
+  }
+
   uint32_t cRows = matrix_.changedRows();
-  if (!cRows) return;
-  
-  // ponytail: save changes before clearing, hasChanged zeros everything
+  bool resumeTransition = wasSuspended_ && !hid_.suspended();
+
+  if (!cRows && !resumeTransition) {
+    wasSuspended_ = hid_.suspended();
+    return;
+  }
+
   uint32_t savedChanged[8];
   for (uint8_t r = 0; r < config_.rows; ++r)
     savedChanged[r] = matrix_.changedRow(r);
@@ -34,93 +56,117 @@ void Keyboard::task(uint32_t /*now*/) {
   const uint8_t rows = config_.rows;
   const uint8_t cols = config_.columns;
 
-  // Step 1: process releases
-  for (uint8_t r = 0; r < rows; ++r) {
-    if (!(cRows & (1UL << r))) continue;
-    uint32_t changed = savedChanged[r];
-    uint32_t stable  = matrix_.stableRow(r);
-    uint32_t released = changed & ~stable;
-
-    for (uint8_t c = 0; c < cols; ++c) {
-      if (!(released & (1UL << c))) continue;
-      uint8_t pos = r * cols + c;
-      uint16_t code = activeCodes_[pos];
-      if (code == 0x0000) continue;
-
-      uint8_t action, layer;
-      if (extractLayerAction(code, action, layer))
-        layerState_.applyLayerRelease(0, code);
-
-      activeCodes_[pos] = 0x0000;
-    }
-  }
-
-  // Step 2: process layer-action presses
   bool bootPending = false;
-  for (uint8_t r = 0; r < rows; ++r) {
-    if (!(cRows & (1UL << r))) continue;
-    uint32_t changed = savedChanged[r];
-    uint32_t stable  = matrix_.stableRow(r);
-    uint32_t pressed  = changed & stable;
 
-    for (uint8_t c = 0; c < cols; ++c) {
-      if (!(pressed & (1UL << c))) continue;
-      uint8_t pos = r * cols + c;
-      uint16_t code = layerState_.resolve(layerState_.defaultLayer(),
-                                          protocol_.keymap(), r, c, rows, cols);
+  if (cRows) {
+    for (uint8_t r = 0; r < rows; ++r) {
+      if (!(cRows & (1UL << r))) continue;
+      uint32_t changed = savedChanged[r];
+      uint32_t stable  = matrix_.stableRow(r);
+      uint32_t released = changed & ~stable;
 
-      uint8_t action, layer;
-      if (extractLayerAction(code, action, layer)) {
-        layerState_.applyLayerPress(0, code);
-        activeCodes_[pos] = code;
-      } else if (classifyKeycode(code) == KeycodeType::kBoot) {
-        activeCodes_[pos] = code;
-        bootPending = true;
-      }
-    }
-  }
+      for (uint8_t c = 0; c < cols; ++c) {
+        if (!(released & (1UL << c))) continue;
+        uint8_t pos = r * cols + c;
+        uint16_t code = activeCodes_[pos];
+        if (code == 0x0000) continue;
 
-  // Step 3: process remaining (non-layer, non-boot) presses
-  for (uint8_t r = 0; r < rows; ++r) {
-    if (!(cRows & (1UL << r))) continue;
-    uint32_t changed = savedChanged[r];
-    uint32_t stable  = matrix_.stableRow(r);
-    uint32_t pressed  = changed & stable;
+        uint8_t action, layer;
+        if (extractLayerAction(code, action, layer))
+          layerState_.applyLayerRelease(0, code);
 
-    for (uint8_t c = 0; c < cols; ++c) {
-      if (!(pressed & (1UL << c))) continue;
-      uint8_t pos = r * cols + c;
-      if (activeCodes_[pos] != 0x0000) continue; // already handled in step 2
-
-      uint16_t code = layerState_.resolve(layerState_.defaultLayer(),
-                                          protocol_.keymap(), r, c, rows, cols);
-
-      KeycodeType type = classifyKeycode(code);
-      if (type == KeycodeType::kLayer || type == KeycodeType::kBoot) {
-        // layer actions and boot handled in step 2; boot shouldn't appear
-        // unless it was the first press and step 2 caught it. Fall through just in case.
-        if (type == KeycodeType::kBoot) bootPending = true;
-        activeCodes_[pos] = code;
-        continue;
-      }
-      if (type == KeycodeType::kNone || type == KeycodeType::kTransparent) {
         activeCodes_[pos] = 0x0000;
-        continue;
       }
+    }
 
-      activeCodes_[pos] = code;
+    for (uint8_t r = 0; r < rows; ++r) {
+      if (!(cRows & (1UL << r))) continue;
+      uint32_t changed = savedChanged[r];
+      uint32_t stable  = matrix_.stableRow(r);
+      uint32_t pressed  = changed & stable;
+
+      for (uint8_t c = 0; c < cols; ++c) {
+        if (!(pressed & (1UL << c))) continue;
+        uint8_t pos = r * cols + c;
+        uint16_t code = layerState_.resolve(layerState_.defaultLayer(),
+                                            protocol_.keymap(), r, c, rows, cols);
+
+        uint8_t action, layer;
+        if (extractLayerAction(code, action, layer)) {
+          layerState_.applyLayerPress(0, code);
+          activeCodes_[pos] = code;
+        } else if (classifyKeycode(code) == KeycodeType::kBoot) {
+          activeCodes_[pos] = code;
+          bootPending = true;
+        }
+      }
+    }
+
+    for (uint8_t r = 0; r < rows; ++r) {
+      if (!(cRows & (1UL << r))) continue;
+      uint32_t changed = savedChanged[r];
+      uint32_t stable  = matrix_.stableRow(r);
+      uint32_t pressed  = changed & stable;
+
+      for (uint8_t c = 0; c < cols; ++c) {
+        if (!(pressed & (1UL << c))) continue;
+        uint8_t pos = r * cols + c;
+        if (activeCodes_[pos] != 0x0000) continue;
+
+        uint16_t code = layerState_.resolve(layerState_.defaultLayer(),
+                                            protocol_.keymap(), r, c, rows, cols);
+
+        KeycodeType type = classifyKeycode(code);
+        if (type == KeycodeType::kLayer || type == KeycodeType::kBoot) {
+          if (type == KeycodeType::kBoot) bootPending = true;
+          activeCodes_[pos] = code;
+          continue;
+        }
+        if (type == KeycodeType::kNone || type == KeycodeType::kTransparent) {
+          activeCodes_[pos] = 0x0000;
+          continue;
+        }
+
+        activeCodes_[pos] = code;
+      }
     }
   }
 
-  buildAndSend();
+  if (hid_.suspended()) {
+    wasSuspended_ = true;
+    if (hid_.remoteWakeupAllowed() && !wakeRequested_) {
+      const uint8_t total = rows * cols;
+      for (uint8_t i = 0; i < total; ++i) {
+        if (activeCodes_[i] != 0x0000) {
+          hid_.remoteWakeup();
+          wakeRequested_ = true;
+          break;
+        }
+      }
+    }
+    return;
+  }
+
+  wasSuspended_ = false;
+  wakeRequested_ = false;
+
+  KeyboardReport desired = buildReport();
+
+  if (reportPending_) {
+    if (memcmp(&desired, &pendingReport_, sizeof(desired)) != 0) {
+      pendingReport_ = desired;
+      hid_.send(desired);
+    }
+  } else {
+    if (memcmp(&desired, &lastAcceptedReport_, sizeof(desired)) != 0) {
+      pendingReport_ = desired;
+      reportPending_ = true;
+      hid_.send(desired);
+    }
+  }
 
   if (bootPending && callbacks_)
     callbacks_->bootloaderRequested();
-}
-
-void Keyboard::buildAndSend() {
-  KeyboardReport r = buildReport();
-  hid_.send(r);
 }
 
 KeyboardReport Keyboard::buildReport() const {

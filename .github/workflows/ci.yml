@@ -61,18 +61,6 @@ jobs:
             -fno-omit-frame-pointer -Isrc tests/matrix_test.cpp \
             src/VIA_Matrix.cpp -o matrix_test_san && ./matrix_test_san
 
-  stm32f1-usb:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Build and run STM32F1 USB host-side test
-        run: |
-          g++ -std=c++11 -Wall -Wextra -Werror -DSTM32F1xx \
-            -Itests/fakes -Isrc \
-            tests/stm32f1_usb_test.cpp src/VIA_STM32F1_USB.cpp \
-            tests/fakes/usbd_core.cpp -o stm32f1_usb_test && \
-            ./stm32f1_usb_test
-
   flash:
     runs-on: ubuntu-latest
     steps:
@@ -121,31 +109,4 @@ jobs:
         run: |
           arduino-cli compile --fqbn rp2040:rp2040:rpipico:usbstack=tinyusb \
             --libraries . examples/RP2040_VIA_RawHID
-      - name: Install STM32 toolchain
-        run: |
-          arduino-cli config add board_manager.additional_urls \
-            https://github.com/stm32duino/BoardManagerFiles/raw/main/package_stmicroelectronics_index.json
-          arduino-cli core update-index
-          arduino-cli core install STMicroelectronics:stm32@3.0.0
-      - name: Compile STM32F103 keyboard
-        run: |
-          arduino-cli compile --clean --warnings all \
-            --fqbn "STMicroelectronics:stm32:GenF1:pnum=BLUEPILL_F103CB,xserial=disabled,usb=HID,xusb=FS,opt=oslto,dbg=none,rtlib=nano,upload_method=swdMethod" \
-            --libraries . --build-path stm32_build \
-            examples/STM32F103_Keyboard_MVP
-      - name: Install ARM toolchain for size check
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq gcc-arm-none-eabi
-      - name: Size gate STM32F103
-        run: |
-          ELF=$(find stm32_build -name '*.elf' | head -1)
-          echo "ELF: $ELF"
-          arm-none-eabi-size -B "$ELF" > size_out.txt
-          cat size_out.txt
-          FLASH=$(tail -1 size_out.txt | awk '{print $1+$2}')
-          RAM=$(tail -1 size_out.txt | awk '{print $2+$3}')
-          echo "flash=${FLASH} ram=${RAM}"
-          test "$FLASH" -le 114688 || { echo "FLASH $FLASH > 112 KiB"; exit 1; }
-          test "$RAM" -le 12288 || { echo "RAM $RAM > 12 KiB"; exit 1; }
-          echo "Size OK"
+

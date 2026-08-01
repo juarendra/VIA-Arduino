@@ -18,10 +18,15 @@ UsbDevice::UsbDevice()
     : configured_(false), suspended_(false),
       kb_tx_busy_(false), via_tx_busy_(false),
       via_rx_ready_(false), led_ready_(false) {
+  memset(&class_, 0, sizeof(class_));
   memset(kb_buf_, 0, sizeof(kb_buf_));
   memset(via_in_buf_, 0, sizeof(via_in_buf_));
   memset(via_out_buf_, 0, sizeof(via_out_buf_));
   led_buf_[0] = 0;
+}
+
+UsbDevice::~UsbDevice() {
+  if (active_ == this) active_ = nullptr;
 }
 
 int8_t UsbDevice::classInit(USBD_HandleTypeDef* pdev, uint8_t cfgidx) {
@@ -143,6 +148,10 @@ bool UsbDevice::begin() {
 }
 
 void UsbDevice::task() {
+  // ponytail: SOF/ISR-driven; main-loop drain is deferred. Flags are
+  // consumed by sendComplete()/takeHostLeds()/receive() polls in caller's
+  // task loop. Add USBD_IRQ_Handler dispatch here when using bare metal
+  // instead of RTOS interrupt trampoline.
   (void)hUsbDevice_;
   if (active_ != this) return;
 }
@@ -159,7 +168,7 @@ bool UsbDevice::send(const KeyboardReport& r) {
 }
 
 bool UsbDevice::sendComplete() {
-  return active_ == this && !kb_tx_busy_;
+  return active_ == this && !kb_tx_busy_ && !via_tx_busy_;
 }
 
 bool UsbDevice::takeHostLeds(uint8_t& leds) {

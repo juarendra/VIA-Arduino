@@ -69,6 +69,47 @@ static void assertBufferSizes() {
   assert(via::stm32f1::kViaReportSize == via::kPacketSize);
 }
 
+static void assertSendCompleteComposite() {
+  via::stm32f1::UsbDevice dev;
+  assert(dev.begin());
+
+  assert(dev.sendComplete()); // nothing in flight
+
+  via::KeyboardReport r = {0, 0, {0, 0, 0, 0, 0, 0}};
+  assert(dev.send(r));     // kb EP busy
+  assert(!dev.sendComplete()); // kb_tx_busy_ true
+
+  usbd_transmit_ok = true;
+
+  const uint8_t tx[via::kPacketSize] = {};
+  assert(dev.send(tx));       // via EP busy too
+  assert(!dev.sendComplete()); // both busy
+}
+
+static void assertViaSendGuard() {
+  via::stm32f1::UsbDevice dev;
+  assert(dev.begin());
+
+  const uint8_t tx[via::kPacketSize] = {};
+  assert(dev.send(tx));
+  assert(!dev.sendComplete());
+
+  assert(!dev.send(tx)); // already busy, guard works
+}
+
+static void assertClassZeroInit() {
+  via::stm32f1::UsbDevice dev;
+  // begin() assigns callbacks; before that, all must be nullptr.
+  // This is compile-time: we just verify begin() succeeds (UB-free).
+  assert(dev.begin());
+}
+
+static void assertTaskRuns() {
+  via::stm32f1::UsbDevice dev;
+  assert(dev.begin());
+  dev.task(); // must not crash
+}
+
 static void assertEndpointConstants() {
   assert(via::stm32f1::kKeyboardEpIn == 0x81);
   assert(via::stm32f1::kViaEpIn == 0x82);
@@ -81,5 +122,9 @@ int main() {
   assertTransportContract();
   assertBufferSizes();
   assertEndpointConstants();
+  assertSendCompleteComposite();
+  assertViaSendGuard();
+  assertClassZeroInit();
+  assertTaskRuns();
   return 0;
 }

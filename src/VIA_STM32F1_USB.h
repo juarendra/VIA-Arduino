@@ -21,6 +21,7 @@ constexpr uint8_t kViaReportSize = kPacketSize;
 class UsbDevice : public KeyboardHID, public Transport {
  public:
   UsbDevice();
+  ~UsbDevice();
   bool begin();
   void task();
 
@@ -34,7 +35,6 @@ class UsbDevice : public KeyboardHID, public Transport {
 
   bool receive(uint8_t packet[kPacketSize]) override;
   bool send(const uint8_t packet[kPacketSize]) override;
-  bool sendComplete() override { return !via_tx_busy_; }
 
  private:
   static int8_t classInit(USBD_HandleTypeDef* pdev, uint8_t cfgidx);

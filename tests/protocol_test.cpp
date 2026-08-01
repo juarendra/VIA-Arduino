@@ -35,6 +35,18 @@ class RecordingCallbacks : public via::Callbacks {
   uint8_t layoutCalls;
 };
 
+class LegacyIndicationCallbacks : public via::Callbacks {
+ public:
+  LegacyIndicationCallbacks() : calls(0) {}
+
+  void deviceIndication(bool enabled) override {
+    values[calls++] = enabled;
+  }
+
+  bool values[2];
+  uint8_t calls;
+};
+
 void assertMatrixPacking(uint8_t columns, uint32_t rowMask,
                          const uint8_t* expected, uint8_t bytesPerRow) {
   uint16_t keymap[29 * 32] = {};
@@ -92,6 +104,27 @@ void assertEncoderRejected(via::Protocol& keyboard, uint8_t command,
   assert(packet[0] == 0xFF);
 }
 
+void assertLegacyIndicationCallback() {
+  uint16_t keymap[1] = {};
+  const uint16_t defaults[1] = {};
+  uint8_t macros[1] = {};
+  via::MemoryTransport transport;
+  LegacyIndicationCallbacks callbacks;
+  via::Config config = {1, 1, 1, keymap, defaults, macros, 0, 0, 0, 0};
+  via::Protocol keyboard(config, transport, nullptr, nullptr, &callbacks);
+  assert(keyboard.begin(0));
+
+  uint8_t packet[via::kPacketSize] = {};
+  packet[0] = 0x03;
+  packet[1] = 0x05;
+  assert(keyboard.process(packet, 0));
+  packet[2] = 4;
+  assert(keyboard.process(packet, 0));
+  assert(callbacks.calls == 2);
+  assert(!callbacks.values[0]);
+  assert(callbacks.values[1]);
+}
+
 }  // namespace
 
 int main() {
@@ -104,6 +137,7 @@ int main() {
   assertMatrixPacking(24, 0x123456, expected24, sizeof(expected24));
   assertMatrixPacking(32, 0x12345678, expected32, sizeof(expected32));
   assertMatrixRowOffsetDoesNotWrap();
+  assertLegacyIndicationCallback();
 
   uint16_t keymap[4] = {0x0004, 0x0005, 0x0014, 0x001A};
   const uint16_t defaults[4] = {0x0004, 0x0005, 0x0014, 0x001A};
@@ -185,6 +219,8 @@ int main() {
   assertEncoderRejected(keyboard, 0x14, 2, 0, 0);
   assertEncoderRejected(keyboard, 0x14, 0, 1, 0);
   assertEncoderRejected(keyboard, 0x14, 0, 0, 2);
+  assertEncoderRejected(keyboard, 0x15, 2, 0, 0);
+  assertEncoderRejected(keyboard, 0x15, 0, 1, 0);
   assertEncoderRejected(keyboard, 0x15, 0, 0, 2);
 
   memset(packet, 0, sizeof(packet));

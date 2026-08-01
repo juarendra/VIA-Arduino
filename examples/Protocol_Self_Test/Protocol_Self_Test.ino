@@ -8,11 +8,13 @@ static uint16_t keymap[2 * 1 * 2] = {0x0004, 0x0005, 0x0014, 0x001A};
 static const uint16_t defaultKeymap[2 * 1 * 2] = {0x0004, 0x0005, 0x0014, 0x001A};
 static uint8_t macros[64];
 static uint8_t savedSettings[128];
+static uint8_t loadBuffer[sizeof(keymap) + sizeof(macros) + sizeof(uint32_t)];
 
 via::MemoryTransport transport;
 via::MemoryStorage storage(savedSettings, sizeof(savedSettings));
 via::Config config = {
     1, 2, 2, keymap, defaultKeymap, macros, sizeof(macros), 2, 1, 750,
+    0, 0, nullptr, nullptr, loadBuffer, sizeof(loadBuffer),
 };
 via::Protocol keyboard(config, transport, &storage);
 

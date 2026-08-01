@@ -44,7 +44,8 @@ bool Protocol::begin(uint32_t nowMs) {
       (config_.macroBytes != 0 && config_.macros == nullptr) ||
       (config_.encoderCount != 0 &&
        (config_.encoderMap == nullptr || config_.defaultEncoderMap == nullptr)) ||
-      !stateBytes(bytes, customBytes)) {
+      !stateBytes(bytes, customBytes) ||
+      (storage_ && (config_.loadBuffer == nullptr || config_.loadBufferBytes < bytes))) {
     return false;
   }
   if (!load()) resetBuffers();
@@ -307,10 +308,7 @@ bool Protocol::stateBytes(size_t& bytes, size_t& customBytes) const {
   const uint32_t total = keymap + encoders + config_.macroBytes +
                          sizeof(layoutOptions_) + static_cast<uint32_t>(customBytes);
   const uint32_t record = total + sizeof(StateHeader);
-  if (total > UINT16_MAX ||
-      (sizeof(size_t) < sizeof(uint32_t) && record > static_cast<uint32_t>(SIZE_MAX))) {
-    return false;
-  }
+  if (record > UINT16_MAX) return false;
   bytes = static_cast<size_t>(total);
   return true;
 }
@@ -334,6 +332,7 @@ bool Protocol::load() {
   size_t bytes;
   size_t customSize;
   if (!storage_ || !stateBytes(bytes, customSize)) return false;
+  if (config_.loadBuffer == nullptr || config_.loadBufferBytes < bytes) return false;
   if (storage_->capacity() < sizeof(StateHeader) + bytes) return false;
   StateHeader header;
   if (!storage_->read(0, reinterpret_cast<uint8_t*>(&header), sizeof(header)) ||
@@ -354,21 +353,38 @@ bool Protocol::load() {
   if (~crc != header.crc) return false;
 
   offset = sizeof(header);
-  if (!storage_->read(offset, reinterpret_cast<uint8_t*>(config_.keymap), keymapBytes())) return false;
+  size_t staged = 0;
+  if (!storage_->read(offset, config_.loadBuffer + staged, keymapBytes())) return false;
   offset += keymapBytes();
+  staged += keymapBytes();
   if (encoderMapBytes() &&
-      !storage_->read(offset, reinterpret_cast<uint8_t*>(config_.encoderMap),
+      !storage_->read(offset, config_.loadBuffer + staged,
                       encoderMapBytes())) return false;
   offset += encoderMapBytes();
-  if (config_.macroBytes && !storage_->read(offset, config_.macros, config_.macroBytes)) return false;
+  staged += encoderMapBytes();
+  if (config_.macroBytes &&
+      !storage_->read(offset, config_.loadBuffer + staged, config_.macroBytes)) return false;
   offset += config_.macroBytes;
-  if (!storage_->read(offset, reinterpret_cast<uint8_t*>(&layoutOptions_),
-                      sizeof(layoutOptions_))) return false;
+  staged += config_.macroBytes;
+  if (!storage_->read(offset, config_.loadBuffer + staged, sizeof(layoutOptions_))) return false;
   offset += sizeof(layoutOptions_);
-  if (customSize && !storage_->read(offset, state, customSize)) return false;
-  if (customSize && !customValue_->loadState(state, customSize)) {
+  staged += sizeof(layoutOptions_);
+  if (customSize && !storage_->read(offset, config_.loadBuffer + staged, customSize)) return false;
+  if (customSize && !customValue_->loadState(config_.loadBuffer + staged, customSize)) {
     return false;
   }
+  staged = 0;
+  memcpy(config_.keymap, config_.loadBuffer + staged, keymapBytes());
+  staged += keymapBytes();
+  if (encoderMapBytes()) {
+    memcpy(config_.encoderMap, config_.loadBuffer + staged, encoderMapBytes());
+  }
+  staged += encoderMapBytes();
+  if (config_.macroBytes) {
+    memcpy(config_.macros, config_.loadBuffer + staged, config_.macroBytes);
+  }
+  staged += config_.macroBytes;
+  memcpy(&layoutOptions_, config_.loadBuffer + staged, sizeof(layoutOptions_));
   return true;
 }
 

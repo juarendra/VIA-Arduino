@@ -40,6 +40,7 @@ class CustomValue {
   virtual bool save(uint8_t packet[kPacketSize]) { return packet[1] == 0x02; }
   virtual size_t stateSize() const { return 0; }
   virtual bool saveState(uint8_t*, size_t) const { return true; }
+  // Implementations must leave active state unchanged when returning false.
   virtual bool loadState(const uint8_t*, size_t) { return true; }
 };
 
@@ -60,9 +61,10 @@ struct Config {
          const uint16_t* defaultKeymapValue = nullptr,
          uint8_t* macrosValue = nullptr, uint16_t macroBytesValue = 0,
          uint8_t macroCountValue = 0, uint32_t firmwareVersionValue = 0,
-         uint32_t autoSaveMsValue = 0, uint32_t defaultLayoutOptionsValue = 0,
-         uint8_t encoderCountValue = 0, uint16_t* encoderMapValue = nullptr,
-         const uint16_t* defaultEncoderMapValue = nullptr)
+          uint32_t autoSaveMsValue = 0, uint32_t defaultLayoutOptionsValue = 0,
+          uint8_t encoderCountValue = 0, uint16_t* encoderMapValue = nullptr,
+          const uint16_t* defaultEncoderMapValue = nullptr,
+          uint8_t* loadBufferValue = nullptr, uint16_t loadBufferBytesValue = 0)
       : rows(rowsValue),
         columns(columnsValue),
         layers(layersValue),
@@ -76,7 +78,9 @@ struct Config {
         defaultLayoutOptions(defaultLayoutOptionsValue),
         encoderCount(encoderCountValue),
         encoderMap(encoderMapValue),
-        defaultEncoderMap(defaultEncoderMapValue) {}
+        defaultEncoderMap(defaultEncoderMapValue),
+        loadBuffer(loadBufferValue),
+        loadBufferBytes(loadBufferBytesValue) {}
 
   uint8_t rows;
   uint8_t columns;
@@ -92,6 +96,10 @@ struct Config {
   uint8_t encoderCount;
   uint16_t* encoderMap;
   const uint16_t* defaultEncoderMap;
+  // Storage-backed load requires a caller-owned payload staging buffer that
+  // does not overlap keymap, encoder, macro, or custom state.
+  uint8_t* loadBuffer;
+  uint16_t loadBufferBytes;
 };
 
 class Protocol {

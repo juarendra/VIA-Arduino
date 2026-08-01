@@ -28,12 +28,14 @@ static const uint16_t defaultKeymap[2 * 2 * 3] = {
     0x0014, 0x001A, 0x001B, 0x001D, 0x001C, 0x0018,
 };
 static uint8_t macros[512];
+static uint8_t loadBuffer[sizeof(keymap) + sizeof(macros) + sizeof(uint32_t)];
 
 via::tinyusb::RawHID rawHid;
 via::tinyusb::Keyboard usbKeyboard;
 via::EEPROMStorage storage(1024);
 via::Config config = {
     2, 3, 2, keymap, defaultKeymap, macros, sizeof(macros), 16, 1, 750,
+    0, 0, nullptr, nullptr, loadBuffer, sizeof(loadBuffer),
 };
 via::Protocol keyboard(config, rawHid, &storage);
 

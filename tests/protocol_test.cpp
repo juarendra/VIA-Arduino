@@ -193,8 +193,9 @@ class StoredCustomValue : public via::CustomValue {
     return true;
   }
   bool loadState(const uint8_t* state, size_t size) override {
-    if (size != 1 || rejectLoad_) return false;
+    if (size != 1) return false;
     ++loadCalls;
+    if (rejectLoad_) return false;
     value = state[0];
     return true;
   }
@@ -292,7 +293,10 @@ void assertCustomValueRouting() {
   via::MemoryTransport transport;
   RecordingStorage storage;
   ChannelSevenCustomValue customValue;
+  uint8_t loadBuffer[6];
   via::Config config = {1, 1, 1, keymap, defaults};
+  config.loadBuffer = loadBuffer;
+  config.loadBufferBytes = sizeof(loadBuffer);
   via::Protocol keyboard(config, transport, &storage, &customValue);
   assert(keyboard.begin(0));
   storage.reset();
@@ -327,7 +331,10 @@ void assertLegacyCustomValueSaveCompatibility() {
   via::MemoryTransport transport;
   RecordingStorage storage;
   LegacyCustomValue customValue;
+  uint8_t loadBuffer[6];
   via::Config config = {1, 1, 1, keymap, defaults};
+  config.loadBuffer = loadBuffer;
+  config.loadBufferBytes = sizeof(loadBuffer);
   via::Protocol keyboard(config, transport, &storage, &customValue);
   assert(keyboard.begin(0));
   storage.reset();
@@ -420,11 +427,14 @@ void assertCorruptLoadDoesNotMutateActiveState() {
   const uint16_t defaultEncoderMap[2] = {0x2001, 0x2002};
   uint8_t macros[2] = {0x31, 0x32};
   uint8_t storageBytes[64] = {};
+  uint8_t loadBuffer[15];
   via::MemoryTransport transport;
   via::MemoryStorage storage(storageBytes, sizeof(storageBytes));
   StoredCustomValue customValue(0x41);
   via::Config config = {1, 2, 1, keymap, defaults, macros, sizeof(macros), 1, 0, 0,
                         0x30010203UL, 1, encoderMap, defaultEncoderMap};
+  config.loadBuffer = loadBuffer;
+  config.loadBufferBytes = sizeof(loadBuffer);
   via::Protocol keyboard(config, transport, &storage, &customValue);
   assert(keyboard.begin(0));
   assert(keyboard.save());
@@ -465,11 +475,14 @@ void assertSecondPassFailureDoesNotMutateActiveState() {
   const uint16_t defaultEncoderMap[2] = {0x2001, 0x2002};
   uint8_t macros[2] = {};
   uint8_t storageBytes[64];
+  uint8_t loadBuffer[15];
   via::MemoryTransport transport;
   FailingReadStorage storage(storageBytes, sizeof(storageBytes));
   StoredCustomValue customValue(0x41);
   via::Config config = {1, 2, 1, keymap, defaults, macros, sizeof(macros), 1, 0, 0,
                         0x30010203UL, 1, encoderMap, defaultEncoderMap};
+  config.loadBuffer = loadBuffer;
+  config.loadBufferBytes = sizeof(loadBuffer);
   via::Protocol keyboard(config, transport, &storage, &customValue);
   assert(keyboard.begin(0));
   assert(keyboard.save());
@@ -499,11 +512,14 @@ void assertCustomLoadRejectionDoesNotMutateActiveState() {
   const uint16_t defaults[1] = {0x1001};
   uint8_t macros[1] = {};
   uint8_t storageBytes[32] = {};
+  uint8_t loadBuffer[8];
   via::MemoryTransport transport;
   via::MemoryStorage storage(storageBytes, sizeof(storageBytes));
   StoredCustomValue saved(0x41);
   via::Config config = {1, 1, 1, keymap, defaults, macros, sizeof(macros), 0, 0, 0,
                         0x30010203UL};
+  config.loadBuffer = loadBuffer;
+  config.loadBufferBytes = sizeof(loadBuffer);
   via::Protocol keyboard(config, transport, &storage, &saved);
   assert(keyboard.begin(0));
   assert(keyboard.save());
@@ -522,7 +538,7 @@ void assertCustomLoadRejectionDoesNotMutateActiveState() {
   assert(macros[0] == 0xC1);
   assert(rejectingKeyboard.layoutOptions() == 0xE0010203UL);
   assert(rejecting.value == 0xD1);
-  assert(rejecting.loadCalls == 0);
+  assert(rejecting.loadCalls == 1);
 }
 
 void assertBulkBoundsAndEmptyWrites() {
@@ -577,10 +593,13 @@ void assertCustomStateSerializedOncePerSave() {
   uint16_t keymap[1] = {0x1234};
   const uint16_t defaults[1] = {0x1234};
   uint8_t storageBytes[32] = {};
+  uint8_t loadBuffer[7];
   via::MemoryTransport transport;
   via::MemoryStorage storage(storageBytes, sizeof(storageBytes));
   StoredCustomValue saved(0, true);
   via::Config config = {1, 1, 1, keymap, defaults};
+  config.loadBuffer = loadBuffer;
+  config.loadBufferBytes = sizeof(loadBuffer);
   via::Protocol keyboard(config, transport, &storage, &saved);
   assert(keyboard.begin(0));
   assert(keyboard.save());
@@ -590,6 +609,8 @@ void assertCustomStateSerializedOncePerSave() {
   via::MemoryTransport restoredTransport;
   StoredCustomValue restored(0);
   via::Config restoredConfig = {1, 1, 1, restoredKeymap, defaults};
+  restoredConfig.loadBuffer = loadBuffer;
+  restoredConfig.loadBufferBytes = sizeof(loadBuffer);
   via::Protocol restoredKeyboard(restoredConfig, restoredTransport, &storage, &restored);
   assert(restoredKeyboard.begin(0));
   assert(restored.value == 1);
@@ -638,11 +659,14 @@ int main() {
   const uint16_t defaultEncoderMap[4] = {0x0101, 0x0102, 0x0201, 0x0202};
   uint8_t macros[64] = {};
   uint8_t storageBytes[128] = {};
+  uint8_t loadBuffer[84];
   via::MemoryTransport transport;
   via::MemoryStorage storage(storageBytes, sizeof(storageBytes));
   RecordingCallbacks callbacks;
   via::Config config = {1, 2, 2, keymap, defaults, macros, sizeof(macros), 2, 1, 1,
                         0x01020304UL, 1, encoderMap, defaultEncoderMap};
+  config.loadBuffer = loadBuffer;
+  config.loadBufferBytes = sizeof(loadBuffer);
   via::Protocol keyboard(config, transport, &storage, nullptr, &callbacks);
   assert(keyboard.begin(0));
   assert(keyboard.layoutOptions() == 0x01020304UL);
@@ -741,6 +765,8 @@ int main() {
   via::Config restoredConfig = {
       1, 2, 2, restored, defaults, restoredMacros, sizeof(restoredMacros), 2, 1, 1,
       0x01020304UL, 1, restoredEncoderMap, defaultEncoderMap};
+  restoredConfig.loadBuffer = loadBuffer;
+  restoredConfig.loadBufferBytes = sizeof(loadBuffer);
   via::MemoryTransport restoredTransport;
   via::Protocol restoredKeyboard(restoredConfig, restoredTransport, &storage);
   assert(restoredKeyboard.begin(0));

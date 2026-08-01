@@ -70,18 +70,21 @@ bool Protocol::begin(uint32_t nowMs) {
 }
 
 void Protocol::task(uint32_t nowMs) {
-  if (!responsePending_ && transport_.receive(pendingResponse_)) {
+  if (!responsePending_ && !bootloaderPending_ &&
+      transport_.receive(pendingResponse_)) {
     const bool bootloaderRequest = pendingResponse_[0] == 0x0B &&
-                                   config_.bootloaderEnabled;
+                                    config_.bootloaderEnabled;
     const bool processed = process(pendingResponse_, nowMs);
     bootloaderPending_ = bootloaderRequest && processed;
     responsePending_ = true;
   }
   if (responsePending_ && transport_.send(pendingResponse_)) {
-    const bool bootloader = bootloaderPending_;
     responsePending_ = false;
+  }
+  if (!responsePending_ && bootloaderPending_ && transport_.sendComplete()) {
     bootloaderPending_ = false;
-    if (bootloader && callbacks_) callbacks_->bootloaderJump();
+    Callbacks* callbacks = callbacks_;
+    callbacks->bootloaderJump();
   }
   if (dirty_ && static_cast<int32_t>(nowMs - saveAt_) >= 0) save();
 }
@@ -192,7 +195,9 @@ bool Protocol::process(uint8_t packet[kPacketSize], uint32_t nowMs) {
       if (!config_.eepromResetEnabled || !factoryReset()) packet[0] = 0xFF;
       break;
     case 0x0B:  // bootloader jump
-      if (!config_.bootloaderEnabled) packet[0] = 0xFF;
+      if (!config_.bootloaderEnabled || !callbacks_ || (dirty_ && !save())) {
+        packet[0] = 0xFF;
+      }
       break;
     case 0x0C:  // get macro count
       packet[1] = config_.macroCount;

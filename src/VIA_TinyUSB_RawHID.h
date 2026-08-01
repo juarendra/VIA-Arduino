@@ -20,6 +20,7 @@ class RawHID : public Transport {
   bool begin(const char* interfaceName = "VIA Raw HID");
   bool receive(uint8_t packet[kPacketSize]) override;
   bool send(const uint8_t packet[kPacketSize]) override;
+  bool sendComplete() override;
   bool ready();
 
  private:

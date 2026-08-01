@@ -17,7 +17,11 @@ class Transport {
  public:
   virtual ~Transport() {}
   virtual bool receive(uint8_t packet[kPacketSize]) = 0;
+  // A true send() queues the packet and Protocol must not retry it. Protocol
+  // calls sendComplete() only after that success; asynchronous adapters return
+  // false while the transfer is in flight. Synchronous adapters inherit true.
   virtual bool send(const uint8_t packet[kPacketSize]) = 0;
+  virtual bool sendComplete() { return true; }
 };
 
 /* Storage implementations may wrap EEPROM, Preferences/NVS, or a reserved

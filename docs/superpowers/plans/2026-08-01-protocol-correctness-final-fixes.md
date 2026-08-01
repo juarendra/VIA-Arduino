@@ -70,3 +70,29 @@
 - [ ] Write RED/GREEN evidence, design, files, commits, pushes, and concerns to requested report path.
 - [ ] Commit and push documentation/report.
 - [ ] Check GitHub Actions for pushed HEAD and record available result.
+
+### Task 8: Non-Mutating Custom State Validation
+
+**Files:**
+- Modify: `src/VIA_Protocol.h`
+- Modify: `src/VIA_Protocol.cpp`
+- Modify: `tests/protocol_test.cpp`
+- Modify: `README.md`
+- Modify: `CHANGELOG.md`
+- Modify: `docs/PORTING.md`
+- Modify: `doc/FEATURE_RESEARCH.md`
+- Create: `.superpowers/sdd/2026-08-01-protocol-correctness/task-8-report.md`
+
+**Interfaces:**
+- Adds source-compatible virtual `CustomValue::validateState(const uint8_t*, size_t) const`.
+- Validation is non-mutating and defaults to exact `stateSize()` length.
+- A successful validation guarantees `loadState()` publishes the same bytes; a failed
+  `loadState()` remains non-mutating.
+
+- [ ] Add and push failing direct-load and factory-reset validation tests before production code.
+- [ ] Validate staged custom bytes before direct-load publication.
+- [ ] Validate custom reset bytes before storage erase, write, or commit.
+- [ ] Publish custom reset state without a fallible branch after durable commit.
+- [ ] Document migration for custom handlers that reject persisted state.
+- [ ] Run WSL warnings-as-errors and ASan/UBSan suites, push, and verify GitHub CI.
+- [ ] Record RED/GREEN evidence, commits, CI, and concerns in the Task 8 report.

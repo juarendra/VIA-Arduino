@@ -145,16 +145,20 @@ class ResetFailureStorage : public via::Storage {
   enum Failure { kNone, kCapacity, kErase, kWrite, kCommit };
 
   ResetFailureStorage()
-      : failure(kNone), writes(0), commits(0), erases(0) {}
+      : failure(kNone), writes(0), commits(0), erases(0) {
+    memset(bytes, 0xFF, sizeof(bytes));
+  }
 
   size_t capacity() const override {
     return failure == kCapacity ? 0 : sizeof(bytes);
   }
   bool read(size_t, uint8_t*, size_t) override { return false; }
-  bool write(size_t offset, const uint8_t*, size_t length) override {
+  bool write(size_t offset, const uint8_t* input, size_t length) override {
     ++writes;
-    return failure != kWrite && offset <= sizeof(bytes) &&
-           length <= sizeof(bytes) - offset;
+    if (failure == kWrite || offset > sizeof(bytes) ||
+        length > sizeof(bytes) - offset) return false;
+    memcpy(bytes + offset, input, length);
+    return true;
   }
   bool commit() override {
     ++commits;
@@ -270,9 +274,9 @@ class OversizedCustomValue : public via::CustomValue {
 class StoredCustomValue : public via::CustomValue {
  public:
   explicit StoredCustomValue(uint8_t initialValue, bool changingSave = false,
-                             bool rejectLoad = false)
-      : value(initialValue), saveCalls(0), loadCalls(0),
-        changingSave_(changingSave), rejectLoad_(rejectLoad) {}
+                              bool rejectState = false)
+      : value(initialValue), saveCalls(0), validationCalls(0), loadCalls(0),
+        changingSave_(changingSave), rejectState_(rejectState) {}
 
   bool set(uint8_t[via::kPacketSize]) override { return true; }
   bool get(uint8_t[via::kPacketSize]) override { return true; }
@@ -283,21 +287,25 @@ class StoredCustomValue : public via::CustomValue {
     state[0] = changingSave_ ? saveCalls : value;
     return true;
   }
+  bool validateState(const uint8_t*, size_t size) const override {
+    ++validationCalls;
+    return size == 1 && !rejectState_;
+  }
   bool loadState(const uint8_t* state, size_t size) override {
     if (size != 1) return false;
     ++loadCalls;
-    if (rejectLoad_) return false;
     value = state[0];
     return true;
   }
 
   uint8_t value;
   mutable uint8_t saveCalls;
+  mutable uint8_t validationCalls;
   uint8_t loadCalls;
 
  private:
   bool changingSave_;
-  bool rejectLoad_;
+  bool rejectState_;
 };
 
 void assertMatrixPacking(uint8_t columns, uint32_t rowMask,
@@ -944,7 +952,7 @@ void assertSecondPassFailureDoesNotMutateActiveState() {
   assert(customValue.loadCalls == 0);
 }
 
-void assertCustomLoadRejectionDoesNotMutateActiveState() {
+void assertCustomValidationRejectionDoesNotMutateActiveState() {
   uint16_t keymap[1] = {0x1001};
   const uint16_t defaults[1] = {0x1001};
   uint8_t macros[1] = {};
@@ -966,16 +974,64 @@ void assertCustomLoadRejectionDoesNotMutateActiveState() {
   uint8_t packet[via::kPacketSize] = {0x03, 0x02, 0xE0, 0x01, 0x02, 0x03};
   assert(keyboard.process(packet, 0));
   StoredCustomValue rejecting(0xD1, false, true);
-  via::Protocol rejectingKeyboard(config, transport, &storage, &rejecting);
+  RecordingCallbacks callbacks;
+  via::Protocol rejectingKeyboard(config, transport, &storage, &rejecting,
+                                  &callbacks);
   packet[2] = 0xE0;
   assert(rejectingKeyboard.process(packet, 0));
+  const uint8_t layoutCalls = callbacks.layoutCalls;
+  const uint8_t changeCalls = callbacks.changeCalls;
+  uint8_t storedBefore[sizeof(storageBytes)];
+  memcpy(storedBefore, storageBytes, sizeof(storedBefore));
 
   assert(!rejectingKeyboard.load());
   assert(keymap[0] == 0xA001);
   assert(macros[0] == 0xC1);
   assert(rejectingKeyboard.layoutOptions() == 0xE0010203UL);
   assert(rejecting.value == 0xD1);
-  assert(rejecting.loadCalls == 1);
+  assert(rejecting.validationCalls == 1);
+  assert(rejecting.loadCalls == 0);
+  assert(rejectingKeyboard.dirty());
+  assert(callbacks.layoutCalls == layoutCalls);
+  assert(callbacks.changeCalls == changeCalls);
+  assert(memcmp(storageBytes, storedBefore, sizeof(storageBytes)) == 0);
+}
+
+void assertFactoryResetValidationRejectionIsTransactional() {
+  uint16_t keymap[1] = {};
+  const uint16_t defaults[1] = {0x1001};
+  uint16_t encoderMap[2] = {};
+  const uint16_t defaultEncoderMap[2] = {0x2001, 0x2002};
+  uint8_t macros[2] = {};
+  uint8_t loadBuffer[13];
+  via::MemoryTransport transport;
+  ResetFailureStorage storage;
+  StoredCustomValue customValue(0x41, false, true);
+  RecordingCallbacks callbacks;
+  via::Config config = {1, 1, 1, keymap, defaults, macros, sizeof(macros),
+                        1, 0, 0, 0x30010203UL, 1, encoderMap,
+                        defaultEncoderMap};
+  config.loadBuffer = loadBuffer;
+  config.loadBufferBytes = sizeof(loadBuffer);
+  via::Protocol keyboard(config, transport, &storage, &customValue, &callbacks);
+  assert(keyboard.begin(0));
+  setNonDefaultResetState(keyboard, encoderMap, macros, customValue);
+  const uint8_t layoutCalls = callbacks.layoutCalls;
+  const uint8_t changeCalls = callbacks.changeCalls;
+  const uint8_t customLoads = customValue.loadCalls;
+  uint8_t storedBefore[sizeof(storage.bytes)];
+  memcpy(storedBefore, storage.bytes, sizeof(storedBefore));
+  storage.resetCounts();
+
+  assert(!keyboard.factoryReset());
+  assertResetStateUnchanged(keyboard, keymap, encoderMap, macros, customValue);
+  assert(keyboard.dirty());
+  assert(callbacks.layoutCalls == layoutCalls);
+  assert(callbacks.changeCalls == changeCalls);
+  assert(customValue.validationCalls == 1);
+  assert(customValue.loadCalls == customLoads);
+  assert(storage.erases == 0 && storage.writes == 0 && storage.commits == 0);
+  assert(memcmp(storage.bytes, storedBefore, sizeof(storedBefore)) == 0);
 }
 
 void assertBulkBoundsAndEmptyWrites() {
@@ -1051,6 +1107,7 @@ void assertCustomStateSerializedOncePerSave() {
   via::Protocol restoredKeyboard(restoredConfig, restoredTransport, &storage, &restored);
   assert(restoredKeyboard.begin(0));
   assert(restored.value == 1);
+  assert(restored.validationCalls == 1);
   assert(restored.loadCalls == 1);
 }
 
@@ -1254,7 +1311,8 @@ int main() {
   assertLoadBufferAliasesRejectedBeforeStorageAccess();
   assertRequiredLoadBufferSizeAndMigrationGuards();
   assertTenFieldConfigWithoutStorageBegins();
-  assertCustomLoadRejectionDoesNotMutateActiveState();
+  assertCustomValidationRejectionDoesNotMutateActiveState();
+  assertFactoryResetValidationRejectionIsTransactional();
   assertSecondPassFailureDoesNotMutateActiveState();
   assertSuccessfulFactoryResetPublishesOnce();
   assertBulkBoundsAndEmptyWrites();

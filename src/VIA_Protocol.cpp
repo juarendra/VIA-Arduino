@@ -41,7 +41,8 @@ bool Protocol::begin(uint32_t nowMs) {
       config_.keymap == nullptr || config_.defaultKeymap == nullptr ||
       (config_.macroBytes != 0 && config_.macros == nullptr) ||
       (config_.encoderCount != 0 &&
-       (config_.encoderMap == nullptr || config_.defaultEncoderMap == nullptr))) {
+       (config_.encoderMap == nullptr || config_.defaultEncoderMap == nullptr)) ||
+      (customValue_ && customValue_->stateSize() > kMaxCustomStateSize)) {
     return false;
   }
   if (!load()) resetBuffers();
@@ -157,7 +158,7 @@ bool Protocol::process(uint8_t packet[kPacketSize], uint32_t nowMs) {
       if (!customValue_ || !customValue_->get(packet)) packet[0] = 0xFF;
       break;
     case 0x09:  // EEPROM reset / commit
-      if (packet[1] != 0x02 || !save()) packet[0] = 0xFF;
+      if (!customValue_ || !customValue_->save(packet) || !save()) packet[0] = 0xFF;
       break;
     case 0x0A:  // reset EEPROM
       if (!factoryReset()) packet[0] = 0xFF;
@@ -302,7 +303,7 @@ uint32_t Protocol::stateCrc() const {
     crc = crc32Update(crc, layoutOptions[i]);
   }
   if (customValue_) {
-    uint8_t state[16];
+    uint8_t state[kMaxCustomStateSize];
     const size_t size = customValue_->stateSize();
     if (size > sizeof(state) || !customValue_->saveState(state, size)) return 0;
     for (size_t i = 0; i < size; ++i) crc = crc32Update(crc, state[i]);
@@ -328,7 +329,7 @@ bool Protocol::load() {
   if (!storage_->read(offset, reinterpret_cast<uint8_t*>(&layoutOptions_),
                       sizeof(layoutOptions_))) return false;
   offset += sizeof(layoutOptions_);
-  uint8_t customState[16];
+  uint8_t customState[kMaxCustomStateSize];
   size_t customSize = 0;
   if (customValue_ && customValue_->stateSize()) {
     customSize = customValue_->stateSize();
@@ -373,7 +374,7 @@ bool Protocol::writeState() {
                        sizeof(layoutOptions_))) return false;
   offset += sizeof(layoutOptions_);
   if (customValue_ && customValue_->stateSize()) {
-    uint8_t state[16];
+    uint8_t state[kMaxCustomStateSize];
     const size_t size = customValue_->stateSize();
     if (size > sizeof(state) || !customValue_->saveState(state, size) ||
         !storage_->write(offset, state, size)) return false;
@@ -388,7 +389,7 @@ bool Protocol::writeState() {
 bool Protocol::factoryReset() {
   resetBuffers();
   if (customValue_ && customValue_->stateSize()) {
-    uint8_t state[16] = {};
+    uint8_t state[kMaxCustomStateSize] = {};
     if (customValue_->stateSize() > sizeof(state) ||
         !customValue_->loadState(state, customValue_->stateSize())) return false;
   }

@@ -6,6 +6,7 @@
 namespace via {
 
 constexpr uint8_t kPacketSize = 32;
+constexpr size_t kMaxCustomStateSize = 16;
 constexpr uint8_t kProtocolVersion = 0x0D;
 constexpr uint16_t kRawUsagePage = 0xFF60;
 constexpr uint16_t kRawUsage = 0x0061;
@@ -36,6 +37,7 @@ class CustomValue {
   virtual ~CustomValue() {}
   virtual bool set(uint8_t packet[kPacketSize]) = 0;
   virtual bool get(uint8_t packet[kPacketSize]) = 0;
+  virtual bool save(uint8_t packet[kPacketSize]) = 0;
   virtual size_t stateSize() const { return 0; }
   virtual bool saveState(uint8_t*, size_t) const { return true; }
   virtual bool loadState(const uint8_t*, size_t) { return true; }

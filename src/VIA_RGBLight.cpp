@@ -35,6 +35,10 @@ bool RGBLight::get(uint8_t packet[kPacketSize]) {
   return true;
 }
 
+bool RGBLight::save(uint8_t packet[kPacketSize]) {
+  return packet[1] == 0x02;
+}
+
 bool RGBLight::saveState(uint8_t* output, size_t length) const {
   if (length != sizeof(state_)) return false;
   memcpy(output, &state_, sizeof(state_));

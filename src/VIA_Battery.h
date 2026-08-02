@@ -40,21 +40,25 @@ class BatteryMgr {
   bool charging() const { return charging_; }
   void charging(bool state) { charging_ = state; }
 
-  static uint16_t rawToMv(uint16_t raw, uint16_t vrefMv = 3300,
-                           uint16_t adcBits = 12) {
-    uint32_t maxRaw = (1UL << adcBits) - 1;
-    return static_cast<uint16_t>((static_cast<uint32_t>(raw) * vrefMv) / maxRaw);
+  void setVref(uint16_t vrefMv) { vrefMv_ = vrefMv; }
+  void setAdcBits(uint16_t bits) { adcBits_ = bits; }
+
+  uint16_t rawToMv(uint16_t raw) const {
+    uint32_t maxRaw = (1UL << adcBits_) - 1;
+    return static_cast<uint16_t>((static_cast<uint32_t>(raw) * vrefMv_) / maxRaw);
   }
 
-  uint16_t rawFromMv(uint16_t mv, uint16_t vrefMv = 3300,
-                      uint16_t adcBits = 12) const {
-    uint32_t maxRaw = (1UL << adcBits) - 1;
-    return static_cast<uint16_t>((static_cast<uint32_t>(mv) * maxRaw) / vrefMv);
+  uint16_t rawFromMv(uint16_t mv) const {
+    uint32_t maxRaw = (1UL << adcBits_) - 1;
+    uint32_t raw = (static_cast<uint32_t>(mv) * maxRaw) / vrefMv_;
+    return raw > 65535 ? 65535 : static_cast<uint16_t>(raw);
   }
 
  private:
   uint16_t minMv_ = 3200;
   uint16_t maxMv_ = 4200;
+  uint16_t vrefMv_ = 3300;
+  uint16_t adcBits_ = 12;
   uint8_t avgSamples_ = 32;
   bool charging_ = false;
 

@@ -1,10 +1,13 @@
 #include "VIA_Battery.h"
 int main() {
   via::BatteryMgr battery;
+  battery.setVref(5000);
+  battery.setAdcBits(12);
   battery.setCalibration(3200, 4200);
-  if (battery.rawFromMv(4200) == 0) return 1;
+  uint16_t r = battery.rawFromMv(4200);
+  if (r == 0) return 1;
   if (battery.percentage() != 0) return 2;
-  battery.update(battery.rawFromMv(4200), 0);
+  battery.update(r, 0);
   if (battery.percentage() != 100) return 3;
   battery.update(battery.rawFromMv(3200), 1);
   if (battery.percentage() != 0) return 4;
@@ -18,7 +21,7 @@ int main() {
   if (battery.charging()) return 8;
   battery.setAverageSamples(4);
   for (int i = 0; i < 4; ++i)
-    battery.update(battery.rawFromMv(3600), 10 + i);
+    battery.update(battery.rawFromMv(3600), 10u + i);
   if (battery.percentage() != 40) return 9;
   return 0;
 }

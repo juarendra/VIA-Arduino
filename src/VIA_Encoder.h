@@ -7,9 +7,8 @@ namespace via {
 class Encoder {
  public:
   constexpr static uint16_t kDebounceDefault = 2000;
-  constexpr static uint16_t kDebounceMin = 500;
 
-  void setDebounceUs(uint16_t us) { debounceUs_ = us < kDebounceMin ? kDebounceMin : us; }
+  void setDebounceUs(uint16_t us) { debounceUs_ = us; }
 
   void update(uint8_t a, uint8_t b, uint32_t now) {
     uint8_t state = (a ? 2 : 0) | (b ? 1 : 0);

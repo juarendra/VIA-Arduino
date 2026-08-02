@@ -77,6 +77,33 @@ jobs:
             tests/flash_test.cpp src/VIA_STM32F1_Flash.cpp -o flash_test_san && \
             ./flash_test_san
 
+  encoder:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run encoder tests
+        run: |
+          g++ -std=c++11 -Wall -Wextra -Werror -Isrc tests/encoder_test.cpp -o encoder_test && ./encoder_test
+          g++ -std=c++11 -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer -Isrc tests/encoder_test.cpp -o encoder_test_san && ./encoder_test_san
+
+  battery:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run battery tests
+        run: |
+          g++ -std=c++11 -Wall -Wextra -Werror -Isrc tests/battery_test.cpp -o battery_test && ./battery_test
+          g++ -std=c++11 -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer -Isrc tests/battery_test.cpp -o battery_test_san && ./battery_test_san
+
+  sleep:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run sleep tests
+        run: |
+          g++ -std=c++11 -Wall -Wextra -Werror -Isrc tests/sleep_test.cpp -o sleep_test && ./sleep_test
+          g++ -std=c++11 -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer -Isrc tests/sleep_test.cpp -o sleep_test_san && ./sleep_test_san
+
   test:
     runs-on: ubuntu-latest
     steps:

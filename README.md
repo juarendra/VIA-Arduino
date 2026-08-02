@@ -1,26 +1,24 @@
 # VIA-Arduino
 
-[![Version](https://img.shields.io/badge/version-0.2.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.4.0-blue.svg)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-VIA-Arduino 0.2.0 is a portable C++11 core for VIA protocol v13. It processes
-fixed 32-byte Raw HID packets and manages dynamic keymaps, macros, layout
-options, encoder maps, custom values, and optional persistence.
-
-This release is not complete keyboard firmware. Applications still own matrix
-scanning, layer selection, QMK keycode execution, and keyboard/mouse/consumer
-HID reports. VIA discovery also requires a compatible native-USB Raw HID
-interface and a matching VIA V3 definition; it is not automatic.
+VIA-Arduino is a portable C++11 firmware library for Arduino-compatible
+microcontrollers that implements the VIA protocol v13, matrix scanning,
+debounce, layer/keycode processing, 6KRO keyboard reports, and platform
+adapters for RP2040, STM32F103, and ESP32-S3.
 
 ## Tested Targets
 
-CI verifies only these configurations:
+CI verifies these configurations on every push:
 
-- Native C++11 protocol tests with warnings treated as errors.
-- Arduino Uno compilation of the transport-independent self-test. Uno has no
-  built-in VIA Raw HID adapter in this library.
-- Raspberry Pi Pico (RP2040) compilation with the Earle Philhower core and
-  Adafruit TinyUSB, including Raw HID, boot-keyboard, and EEPROM adapters.
+- Native C++11 protocol, matrix, keyboard, encoder, battery, sleep, flash,
+  descriptor, and TinyUSB tests with `-Wall -Wextra -Werror`.
+- Arduino Uno compilation of the transport-independent self-test.
+- Raspberry Pi Pico (RP2040) compilation with Adafruit TinyUSB (Raw HID,
+  boot-keyboard, EEPROM).
+- STM32F103 (compile-only, Cube USB adapters, hardware not yet tested).
+- ESP32-S3 (compile-only, dual-mode USB+BLA adapter, hardware not yet tested).
 
 Other architectures may work through the portable interfaces, but are not
 verified by this project.
@@ -47,19 +45,82 @@ Use `task()` with a `via::Transport`; it receives one packet, processes it,
 retries failed response sends, and handles timed saves:
 
 ```cpp
-void setup() {
-  protocol.begin(millis());
-}
-
-void loop() {
-  protocol.task(millis());
-}
+void setup() { protocol.begin(millis()); }
+void loop()  { protocol.task(millis()); }
 ```
 
-See [`Protocol_Self_Test`](examples/Protocol_Self_Test/Protocol_Self_Test.ino)
-for the portable core and
-[`RP2040_VIA_RawHID`](examples/RP2040_VIA_RawHID/RP2040_VIA_RawHID.ino) for
-the compile-tested RP2040 adapters.
+## Modules
+
+### Protocol Core (VIA v13)
+
+All VIA protocol v13 commands including dynamic keymaps, macros (storage-only),
+layout options, encoder maps, custom values, factory reset, and bootloader
+jump with optional persistence. See [Supported Commands](#supported-commands).
+
+### Matrix Scanner
+
+`COL2ROW` and `ROW2COL` matrix scanning with configurable settle time (default
+30 us) and global symmetric deferred debounce (default 5 ms). 32 columns
+maximum per row, zero heap.
+
+```cpp
+#include <VIA_Matrix.h>
+
+via::Matrix matrix(matrixConfig, matrixIO);
+matrix.begin();
+matrix.task(millis());
+if (matrix.hasChanged()) { /* ... */ }
+```
+
+### Keyboard Engine
+
+Stable press/release event batching, transparent layer lookup, basic/modifier/
+QK_MODS keycodes, and boot-protocol 6KRO reports with busy-endpoint retry,
+host LED feedback, suspend/resume, and remote wake.
+
+```cpp
+#include <VIA_Keyboard.h>
+
+via::Keyboard keyboard({rows, cols}, matrix, protocol, hid, activeCodes);
+keyboard.begin();
+keyboard.task(millis());
+```
+
+### Keycode Classification
+
+Header-only QMK 0.0.8 keycode range decoder supporting `KC_NO`, `KC_TRNS`,
+basic HID usages, physical modifiers, `QK_MODS`, `MO`, `TG`, `TO`, `DF`,
+`QK_BOOT`, and safe no-op for everything else.
+
+### Peripherals
+
+- `VIA_Encoder` — gray-code quadrature state machine, configurable debounce.
+- `VIA_Battery` — ADC voltage-to-percentage conversion with moving average.
+- `VIA_SleepMgr` — idle timeout state machine feeding platform deep sleep.
+
+### Platform Adapters
+
+| Adapter | Platform | Feature |
+|---|---|---|
+| `VIA_TinyUSB_RawHID` | RP2040, ESP32-S3 | VIA transport (usage page 0xFF60) |
+| `VIA_TinyUSB_Keyboard` | RP2040, ESP32-S3 | USB HID boot keyboard |
+| `VIA_EEPROMStorage` | RP2040, AVR | EEPROM persistence |
+| `VIA_STM32F1_USB` | STM32F103 | Cube USB composite (keyboard + VIA) |
+| `VIA_STM32F1_Flash` | STM32F103 | Dual-slot atomic flash storage |
+| `VIA_STM32F1_Boot` | STM32F103 | ROM USART bootloader coordinator |
+| `VIA_STM32F1_GPIO` | STM32F103 | Arduino GPIO matrix IO |
+| `VIA_ESP32S3_GPIO` | ESP32-S3 | Arduino GPIO matrix IO |
+| `VIA_ESP32S3_NVS` | ESP32-S3 | Preferences NVS persistence |
+| `VIA_ESP32S3_BLE` | ESP32-S3 | NimBLE BLE HID keyboard adapter |
+
+### Examples
+
+- [`Protocol_Self_Test`](examples/Protocol_Self_Test) — portable protocol core
+- [`RP2040_VIA_RawHID`](examples/RP2040_VIA_RawHID) — wired keyboard with VIA
+- [`STM32F103_Keyboard_MVP`](examples/STM32F103_Keyboard_MVP) — compile-only
+  wired keyboard reference
+- [`ESP32S3_VIA_BLE`](examples/ESP32S3_VIA_BLE) — compile-only wireless
+  keyboard with USB VIA config and BLE typing
 
 ## Persistence
 
@@ -84,38 +145,16 @@ and custom state against those exact bytes before publishing them. A successful
 load publishes callbacks and then clears dirty state; a failed load preserves
 the prior dirty flag and active state.
 
-```cpp
-uint8_t macros[64];
-uint8_t storageBytes[128];
-uint8_t loadBuffer[sizeof(keymap) + sizeof(macros) + sizeof(uint32_t)];
-via::MemoryStorage storage(storageBytes, sizeof(storageBytes));
-
-via::Config storedConfig = {
-    1, 2, 1, keymap, defaults, macros, sizeof(macros), 0, 1, 750,
-    0, 0, nullptr, nullptr, loadBuffer, sizeof(loadBuffer),
-};
-via::Protocol storedProtocol(storedConfig, transport, &storage);
-
-bool loaded = storedProtocol.load();
-bool saved = storedProtocol.save();
-```
-
-`MemoryStorage` is for tests and examples and does not survive power loss.
-Board storage adapters must reserve enough space for the 12-byte record header
-plus the complete payload. See [`docs/PORTING.md`](docs/PORTING.md).
-
 The 0.2.0 storage schema is version 2. Version 1 records from 0.1.0 are
 rejected; `begin()` performs its normal one-time startup fallback to configured
-built-in defaults. No automatic record migration or save occurs, so users must
-reconfigure and save new state.
+built-in defaults.
 
 ## Configuration And Callbacks
 
 The optional `Config` fields appended in 0.2.0 are:
 
 - `defaultLayoutOptions`
-- `encoderCount`, `encoderMap`, and `defaultEncoderMap`; each encoder stores two
-  16-bit keycodes per layer, counterclockwise then clockwise
+- `encoderCount`, `encoderMap`, and `defaultEncoderMap`
 - `loadBuffer` and `loadBufferBytes`
 - `matrixStateEnabled`, `eepromResetEnabled`, and `bootloaderEnabled`
 
@@ -149,18 +188,14 @@ Derive from `via::Callbacks` only for application hooks you need:
 | `0x14`-`0x15` | Encoder keycode get/set |
 
 Unsupported commands and invalid gated operations return `0xFF` in byte 0.
-Bootloader command acceptance also requires a callback and, when state is dirty,
-a successful save. Clean state remains bootable without `Storage`.
-An enabled factory reset publishes defaults and invokes state callbacks only
-after storage erase, replacement writes, and commit all succeed. Custom-state
-validation rejection happens before erase and leaves storage, dirty state, live
-protocol and custom state, and callbacks unchanged. Later storage failures also
-leave live and dirty state and callbacks unchanged.
 
 ## Installation
 
 Install `VIA_Arduino` from Arduino Library Manager, or install a release ZIP
 through **Sketch > Include Library > Add .ZIP Library...**.
+
+ESP32-S3 examples additionally need NimBLE-Arduino and ESP32-BLE-Keyboard
+from the Arduino Library Manager.
 
 ## License
 

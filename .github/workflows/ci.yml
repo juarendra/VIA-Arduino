@@ -61,27 +61,7 @@ jobs:
             -fno-omit-frame-pointer -Isrc tests/matrix_test.cpp \
             src/VIA_Matrix.cpp -o matrix_test_san && ./matrix_test_san
 
-  esp32s3:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: arduino/setup-arduino-cli@v2
-      - name: Install ESP32-S3 toolchain
-        run: |
-          arduino-cli config add board_manager.additional_urls \
-            https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
-          arduino-cli core update-index
-          arduino-cli core install esp32:esp32@3.0.7
-          arduino-cli lib install "NimBLE-Arduino"
-          arduino-cli lib install "ESP32-BLE-Keyboard"
-          arduino-cli lib install "Adafruit TinyUSB Library"
-      - name: Compile ESP32-S3 sketch
-        run: |
-          arduino-cli compile --clean --warnings all \
-            --fqbn "esp32:esp32:esp32s3:USBMode=1" \
-            --libraries . examples/ESP32S3_VIA_BLE
-
-
+  flash:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

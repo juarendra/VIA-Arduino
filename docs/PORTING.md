@@ -191,8 +191,43 @@ Interpret the keycode with your keyboard HID, mouse, consumer, and system
 control implementation. This separation lets a small macro pad and a full
 keyboard share the same VIA configuration core.
 
-Matrix scanning, active-layer policy, and QMK keycode interpretation are not
-implemented by the protocol core.
+Matrix scanning and keycode execution can use the built-in modules:
+
+```cpp
+#include <VIA_Matrix.h>
+#include <VIA_Keyboard.h>
+
+via::Matrix matrix(matrixConfig, matrixIO);
+via::Keyboard keyboard({rows, cols}, matrix, protocol, hid, activeCodes);
+keyboard.begin();
+keyboard.task(millis());
+```
+
+See `docs/API.md` for the full Matrix, Keyboard, Encoder, Battery, and
+SleepMgr API reference.
+
+### ESP32-S3 adapters
+
+`VIA_ESP32S3_GPIO.h`, `VIA_ESP32S3_NVS.h`, and `VIA_ESP32S3_BLE.h` provide
+GPIO matrix IO, NVS persistence (via Preferences), and BLE HID keyboard
+(via NimBLE-Arduino and ESP32-BLE-Keyboard). The existing RP2040
+`VIA_TinyUSB_RawHID.h` adapter compiles for ESP32-S3 as well.
+
+The dual-mode sketch at `examples/ESP32S3_VIA_BLE` uses USB for VIA
+configuration and BLE for wireless typing. It requires NimBLE-Arduino,
+ESP32-BLE-Keyboard, and Adafruit TinyUSB from the Arduino Library Manager.
+WiFi is not used. A sleep manager is included for deep sleep on idle.
+
+ESP32-WROOM-32 (classic) is not supported because it lacks a USB device
+peripheral.
+
+### STM32F103 adapters
+
+`VIA_STM32F1_GPIO.h`, `VIA_STM32F1_USB.h`, `VIA_STM32F1_Flash.h`, and
+`VIA_STM32F1_Boot.h` provide Arduino GPIO matrix IO, a Cube USB Device
+composite class (boot keyboard + VIA Raw HID), dual-slot atomic flash
+storage, and a ROM USART bootloader coordinator. All are compile-tested
+against STM32duino 3.0.0.
 
 ## 6. Test in VIA
 

@@ -2,6 +2,59 @@
 
 ## [Unreleased]
 
+## 0.4.0-experimental — 2026-08-02
+
+### Added
+
+- ESP32-S3 platform adapters: GPIO matrix IO, NVS storage, BLE keyboard HID.
+- ESP32-S3 wireless sketch: dual-mode USB VIA config + BLE typing, compile-only.
+- `VIA_Encoder` — gray-code quadrature state machine with configurable debounce.
+- `VIA_Battery` — ADC voltage-to-percentage conversion with moving average.
+- `VIA_SleepMgr` — idle timeout state machine for deep sleep coordination.
+
+### Changed
+
+- `library.properties` bumped to `0.4.0-experimental`.
+- README expanded with full module listing, platform table, and all examples.
+- CI adds `encoder`, `battery`, and `sleep` native test jobs with ASan/UBSan.
+
+### Hardware
+
+- ESP32-S3 adapters and wireless sketch compile in CI but are not
+  hardware-verified. A custom PCB is required.
+- ESP32-WROOM (classic) is not supported because it lacks a USB device
+  peripheral.
+
+## 0.3.0 — 2026-08-01
+
+### Added
+
+- `VIA_Matrix` with `COL2ROW`/`ROW2COL` scanning, 5 ms global symmetric
+  deferred debounce, and changed-row detection.
+- `VIA_Keyboard` with press/release event batching, transparent layer lookup
+  with `MO`/`TG`/`TO`/`DF`, QMK 0.0.8 keycode classification, basic keyboard
+  HID usages, physical modifiers, `QK_MODS`, and boot-protocol 6KRO reports.
+- Busy-endpoint report retry, coalescing, host LED feedback, suspend/resume
+  detection, and remote wake.
+- STM32F103CB platform adapters: Cube USB composite device (keyboard + VIA
+  Raw HID), dual-slot atomic flash storage, ROM USART bootloader coordinator,
+  GPIO matrix IO.
+- STM32F103 compile-only reference sketch.
+- USB descriptor snapshot tests for boot keyboard and VIA Raw HID interfaces.
+
+### Changed
+
+- `Protocol` gains `rows()`, `columns()`, `layers()`, `keymap()` accessors
+  for the keyboard engine.
+- CI adds `matrix`, `keyboard`, `descriptor`, and `flash` native test jobs
+  with ASan/UBSan; STM32 compile and size gate deferred until hardware
+  toolchain is available.
+
+### Hardware
+
+- STM32F103 adapters and sketch compile in CI but are not hardware-verified.
+  A custom PCB with genuine STM32F103CBT6 is required.
+
 ## 0.2.0 - 2026-08-01
 
 ### Added
@@ -56,20 +109,9 @@
   automatic migration or save exists; users must reconfigure in VIA and save a
   new record.
 - Storage-backed configurations must provide a separate `Config::loadBuffer`
-  of at least `Protocol::requiredLoadBufferSize()` bytes. The core rejects a
-  missing or undersized workspace and overlap with configured keymap, encoder-
-  map, or macro buffers. It cannot inspect `CustomValue` handler-owned active
-  state; callers must keep that state separate as documented in `PORTING.md`.
-- Set each security flag deliberately if upgrading code relied on matrix
-  disclosure, factory reset, or bootloader jump being available.
+  of at least `Protocol::requiredLoadBufferSize()` bytes.
 - Custom-value handlers that can reject persisted bytes must move that decision
-  into a `const`, non-mutating `validateState()` override. Returning `true`
-  guarantees the following `loadState()` for those bytes succeeds and publishes
-  them; returning `false` from `loadState()` must still leave active state
-  unchanged. Handlers needing only exact `stateSize()` validation can use the
-  default implementation unchanged.
-- Applications remain responsible for matrix scanning and executing returned
-  QMK/VIA keycodes as HID reports.
+  into a `const`, non-mutating `validateState()` override.
 
 ## 0.1.0 - 2026-07-26
 

@@ -22,6 +22,7 @@
 #include <VIA_ESP32S3_GPIO.h>
 #include <VIA_ESP32S3_NVS.h>
 #include <VIA_ESP32S3_BLE.h>
+#include <VIA_ESP32S3_BLE_ViaTransport.h>
 #include <VIA_TinyUSB_RawHID.h>
 #include <VIA_TinyUSB_Keyboard.h>
 
@@ -68,6 +69,7 @@ via::Protocol protocol(protocolConfig, viaRawHid, &nvs);
 // --- BLE ---
 BleKeyboard bleKeyboard("VIA Keyboard", "VIA-Arduino", 100);
 via::esp32s3::BleKeyboardHID bleHid(bleKeyboard);
+via::esp32s3::BLEViaTransport bleVia;
 
 // --- Active Codes ---
 static uint16_t activeCodes[5 * 15] = {};
@@ -95,6 +97,7 @@ void setup() {
   nvs.begin();
   viaRawHid.begin("VIA Raw HID");
   usbKeyboard.begin("VIA Keyboard");
+  bleVia.begin("AirVIA KB", 0x00000001);
   protocol.begin(millis());
   bleKeyboard.begin();
   keyboard.begin();
@@ -118,6 +121,13 @@ void loop() {
                                         : static_cast<via::KeyboardHID&>(bleHid),
                               activeCodes, &keyboardCallbacks);
     keyboard.begin();
+  }
+
+  // VIA over BLE (AirVIA transport)
+  uint8_t blePacket[via::kPacketSize];
+  if (bleVia.receive(blePacket)) {
+    protocol.process(blePacket, now);
+    bleVia.send(blePacket);
   }
 
   protocol.task(now);

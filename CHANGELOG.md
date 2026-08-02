@@ -6,7 +6,8 @@
 
 ### Added
 
-- ESP32-S3 platform adapters: GPIO matrix IO, NVS storage, BLE keyboard HID.
+- ESP32-S3 platform adapters: GPIO matrix IO, NVS storage, BLE keyboard HID,
+  BLE GATT VIA transport (AirVIA).
 - ESP32-S3 wireless sketch: dual-mode USB VIA config + BLE typing, compile-only.
 - `VIA_Encoder` — gray-code quadrature state machine with configurable debounce.
 - `VIA_Battery` — ADC voltage-to-percentage conversion with moving average.

@@ -155,4 +155,5 @@ commands.
 
 `#include <VIA_ESP32S3_GPIO.h>` — Arduino `pinMode`/`digitalRead`.  
 `#include <VIA_ESP32S3_NVS.h>` — Preferences NVS persistence.  
-`#include <VIA_ESP32S3_BLE.h>` — NimBLE BLE HID keyboard.
+`#include <VIA_ESP32S3_BLE.h>` — NimBLE BLE HID keyboard.  
+`#include <VIA_ESP32S3_BLE_ViaTransport.h>` — NimBLE GATT VIA transport (AirVIA).

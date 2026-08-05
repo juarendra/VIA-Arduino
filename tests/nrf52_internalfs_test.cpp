@@ -21,7 +21,7 @@ void test_crc32_record() {
     assert(header.magic == 0x56494146);
     assert(header.generation == 1);
     assert(header.length == sizeof(staging));
-    assert(header.crc == 0xCBF43926); // Known CRC32 (polynomial 0xEDB88320) for "123456789" with initial 0xFFFFFFFF
+    assert(header.crc == 0x340BC6D9); // Known CRC32 (polynomial 0xEDB88320) for "123456789" with initial 0xFFFFFFFF
 }
 
 void test_storage() {

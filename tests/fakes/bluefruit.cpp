@@ -1,5 +1,18 @@
 #include "bluefruit.h"
 
+// Define static variables of FakeBluefruit
+uint16_t FakeBluefruit::serviceUuid = 0;
+uint16_t FakeBluefruit::ff61Uuid = 0;
+uint16_t FakeBluefruit::ff61FixedLength = 0;
+uint16_t FakeBluefruit::ff62Uuid = 0;
+uint8_t FakeBluefruit::ff62Value[32] = {0};
+BLECharacteristic::write_cb_t FakeBluefruit::ff61Cb = nullptr;
+uint8_t FakeBluefruit::ff61Written[32] = {0};
+bool FakeBluefruit::ff61Notifying = false;
+bool FakeBluefruit::ff61NotifySuccess = false;
+int FakeBluefruit::ff61NotifyCount = 0;
+FakeBluefruit Bluefruit;
+
 void BLEService::begin() {
     FakeBluefruit::serviceUuid = uuid;
 }

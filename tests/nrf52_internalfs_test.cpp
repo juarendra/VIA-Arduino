@@ -9,9 +9,11 @@ bool g_fake_fs_write_fail = false;
 void test_crc32_record() {
     InternalFS.format();
     g_fake_fs_write_fail = false;
-    uint8_t staging[] = {'1', '2', '3', '4', '5', '6', '7', '8', '9'};
+    uint8_t staging[9] = {0};
     via::nrf52::InternalFSStorage storage(staging, sizeof(staging));
     assert(storage.begin());
+    const uint8_t test_data[] = {'1', '2', '3', '4', '5', '6', '7', '8', '9'};
+    assert(storage.write(0, test_data, sizeof(test_data)));
     assert(storage.commit());
 
     struct Header { uint32_t magic, generation, length, crc; } header = {};

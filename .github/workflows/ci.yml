@@ -196,5 +196,5 @@ jobs:
       - name: Compile nice!nano storage corruptor
         run: |
           arduino-cli compile --fqbn adafruit:nrf52:promicronrf52840 \
-            --libraries . tests/hardware/nice_nano_storage_corruptor
+            --libraries . extras/nice_nano_storage_corruptor
 

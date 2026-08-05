@@ -27,9 +27,9 @@ void test_storage() {
     assert(storage.begin());
     assert(storage.capacity() == sizeof(staging));
 
-    // Initially staging should be 0xFF
+    // Initially staging should be 0x00
     for (size_t i = 0; i < sizeof(staging); ++i) {
-        assert(staging[i] == 0xFF);
+        assert(staging[i] == 0x00);
     }
 
     uint8_t test_data[] = { 1, 2, 3, 4 };
@@ -61,7 +61,56 @@ void test_storage() {
     // Erase
     assert(storage2.erase());
     assert(InternalFS.files_.size() == 0);
-    assert(staging2[10] == 0xFF);
+    assert(staging2[10] == 0x00);
+    
+    // Bounds testing
+    uint8_t dummy = 0;
+    assert(!storage2.read(sizeof(staging2) + 1, &dummy, 1));
+    assert(!storage2.read(sizeof(staging2), &dummy, 1));
+    assert(!storage2.read(sizeof(staging2) - 1, &dummy, 2));
+    assert(!storage2.write(sizeof(staging2) + 1, &dummy, 1));
+    assert(!storage2.write(sizeof(staging2), &dummy, 1));
+    assert(!storage2.write(sizeof(staging2) - 1, &dummy, 2));
+
+    // Corrupt-newest fallback & generation wraparound testing
+    uint8_t genWrapStaging[4096] = {};
+    via::nrf52::InternalFSStorage genWrapStorage(genWrapStaging, sizeof(genWrapStaging));
+    assert(genWrapStorage.begin());
+
+    // Write file A with generation = 0xFFFFFFFF
+    {
+        Adafruit_LittleFS_Namespace::File fA = InternalFS.open("/via_a.dat", Adafruit_LittleFS_Namespace::FILE_O_WRITE);
+        struct { uint32_t magic, gen, len, crc; } hdrA = { 0x56494146, 0xFFFFFFFF, sizeof(genWrapStaging), 0 };
+        hdrA.crc = crc32_compute(genWrapStaging, sizeof(genWrapStaging), NULL);
+        fA.write((const uint8_t*)&hdrA, sizeof(hdrA));
+        fA.write(genWrapStaging, sizeof(genWrapStaging));
+        fA.close();
+    }
+    
+    // Write file B with generation = 0 (wrap around), but make it corrupted (wrong CRC)
+    {
+        Adafruit_LittleFS_Namespace::File fB = InternalFS.open("/via_b.dat", Adafruit_LittleFS_Namespace::FILE_O_WRITE);
+        struct { uint32_t magic, gen, len, crc; } hdrB = { 0x56494146, 0, sizeof(genWrapStaging), 0xBADBAD };
+        fB.write((const uint8_t*)&hdrB, sizeof(hdrB));
+        fB.write(genWrapStaging, sizeof(genWrapStaging));
+        fB.close();
+    }
+    
+    // Test begin() again to trigger selection
+    assert(genWrapStorage.begin());
+    
+    // The active generation should fallback to 0xFFFFFFFF since B is corrupted.
+    // The next commit should wrap to 0.
+    assert(genWrapStorage.commit());
+    
+    // Let's verify file B is written correctly now and has generation 0
+    {
+        Adafruit_LittleFS_Namespace::File fB = InternalFS.open("/via_b.dat", Adafruit_LittleFS_Namespace::FILE_O_READ);
+        struct { uint32_t magic, gen, len, crc; } hdrB;
+        fB.read((uint8_t*)&hdrB, sizeof(hdrB));
+        assert(hdrB.gen == 0);
+        fB.close();
+    }
 }
 
 int main() {

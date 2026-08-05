@@ -104,7 +104,7 @@ bool InternalFSStorage::begin() {
     activeFile = kFileB;
     activeGeneration_ = bGen;
   } else {
-    memset(staging_, 0xFF, capacity_);
+    memset(staging_, 0x00, capacity_);
     activeGeneration_ = 0;
     initialized_ = true;
     return true;
@@ -121,7 +121,7 @@ bool InternalFSStorage::begin() {
     file.close();
   }
   
-  memset(staging_, 0xFF, capacity_);
+  memset(staging_, 0x00, capacity_);
   activeGeneration_ = 0;
   initialized_ = true;
   return true;
@@ -197,7 +197,7 @@ bool InternalFSStorage::erase() {
   initialized_ = false;
   InternalFS.remove(kFileA);
   InternalFS.remove(kFileB);
-  memset(staging_, 0xFF, capacity_);
+  memset(staging_, 0x00, capacity_);
   activeGeneration_ = 0;
   initialized_ = true;
   return true;

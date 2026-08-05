@@ -108,6 +108,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Validate nice!nano example contracts
+        run: |
+          python tests/nice_nano_definition_test.py
+          python tests/nice_nano_sketch_test.py
       - name: Build and run nrf52 adapter tests
         run: |
           g++ -std=c++11 -Wall -Wextra -Werror -DARDUINO_ARCH_NRF52 -DNRF52840_XXAA \

@@ -1,5 +1,4 @@
 #include <Arduino.h>
-#include <Adafruit_TinyUSB.h>
 #include <bluefruit.h>
 #include <VIA_Arduino.h>
 #include <VIA_Keycodes.h>
@@ -12,8 +11,6 @@
 #include <VIA_nRF52_InternalFS.h>
 #include <VIA_nRF52_BLE.h>
 #include <VIA_nRF52_BLE_ViaTransport.h>
-#include <VIA_TinyUSB_RawHID.h>
-#include <VIA_TinyUSB_Keyboard.h>
 
 // Pins for row and column matrix
 static const via::Pin rowPins[2] = {D0, D1};
@@ -53,7 +50,7 @@ via::Matrix matrix(matrixConfig, matrixIO);
 
 static uint16_t keymap[LAYERS * ROWS * COLS] = {};
 static uint8_t loadBuffer[sizeof(keymap) + sizeof(uint32_t)] = {};
-static uint8_t storageStaging[128] = {};
+static uint8_t storageStaging[4096] = {};
 static const uint16_t defaultKeymap[LAYERS * ROWS * COLS] = {
     // Layer 0
     KC_A, KC_B, KC_C,
@@ -71,15 +68,10 @@ via::Config protocolConfig = {
 
 via::nrf52::InternalFSStorage storage(storageStaging, sizeof(storageStaging));
 
-via::tinyusb::RawHID viaRawHid;
-via::tinyusb::Keyboard usbKeyboard;
-
-via::Protocol protocol(protocolConfig, viaRawHid, &storage);
-
-BLEDis bledis;
 BLEHidAdafruit bleHidSvc;
 via::nrf52::BLEKeyboardHID bleHid(bleHidSvc);
 via::nrf52::BLEViaTransport bleVia;
+via::Protocol protocol(protocolConfig, bleVia, &storage);
 
 static uint16_t activeCodes[ROWS * COLS] = {};
 static via::KeyboardCallbacks keyboardCallbacks;
@@ -104,32 +96,24 @@ void startAdvertising() {
 }
 
 void setup() {
-    storage.begin();
-    viaRawHid.begin("VIA Raw HID");
-    usbKeyboard.begin("VIA Keyboard");
-    bleVia.begin("AirVIA KB", 0x00000001);
-    protocol.begin(millis());
-
     Bluefruit.configPrphBandwidth(BANDWIDTH_HIGH);
-    Bluefruit.begin(1, 0);
+    if (!Bluefruit.begin(1, 0)) return;
     Bluefruit.setName("AirVIA nice!nano");
     Bluefruit.setTxPower(4);
     Bluefruit.setAppearance(BLE_APPEARANCE_HID_KEYBOARD);
+    Bluefruit.Security.setIOCaps(false, false, false);
+
     bleHidSvc.begin();
-    
-    keyboard.begin();
+    if (!bleHid.begin()) return;
+    if (!bleVia.begin("AirVIA nice!nano", 0x00000001)) return;
+    if (!storage.begin()) return;
+    if (!protocol.begin(millis())) return;
+    if (!keyboard.begin()) return;
     startAdvertising();
 }
 
 void loop() {
-    uint32_t now = millis();
-
-    uint8_t blePacket[via::kPacketSize];
-    if (bleVia.receive(blePacket)) {
-        protocol.process(blePacket, now);
-        bleVia.send(blePacket);
-    }
-
+    const uint32_t now = millis();
     protocol.task(now);
     keyboard.task(now);
 }

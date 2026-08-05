@@ -104,6 +104,16 @@ jobs:
           g++ -std=c++11 -Wall -Wextra -Werror -Isrc tests/sleep_test.cpp -o sleep_test && ./sleep_test
           g++ -std=c++11 -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer -Isrc tests/sleep_test.cpp -o sleep_test_san && ./sleep_test_san
 
+  nrf52-adapters:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run nrf52 adapter tests
+        run: |
+          g++ -std=c++11 -Wall -Wextra -Werror -DARDUINO_ARCH_NRF52 -DNRF52840_XXAA \
+            -Itests/fakes -Isrc tests/nrf52_gpio_hid_test.cpp -o nrf52_gpio_hid_test && \
+            ./nrf52_gpio_hid_test
+
   test:
     runs-on: ubuntu-latest
     steps:

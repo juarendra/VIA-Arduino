@@ -19,7 +19,7 @@ TEMP_DIR=$(mktemp -d)
 
 # Fetch the specific variant commit
 echo "Fetching variant commit $VARIANT_COMMIT..."
-git clone --quiet https://github.com/adafruit/Adafruit_nRF52_Arduino.git "$TEMP_DIR/Adafruit_nRF52_Arduino"
+git clone --quiet https://github.com/somik123/Adafruit_nRF52_Arduino_ProMicro.git "$TEMP_DIR/Adafruit_nRF52_Arduino"
 cd "$TEMP_DIR/Adafruit_nRF52_Arduino"
 git checkout --quiet "$VARIANT_COMMIT"
 cd - > /dev/null

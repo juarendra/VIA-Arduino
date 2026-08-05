@@ -122,6 +122,14 @@ jobs:
             -Itests/fakes -Isrc tests/nrf52_ble_transport_test.cpp \
             src/VIA_nRF52_BLE_ViaTransport.cpp tests/fakes/bluefruit.cpp -o nrf52_ble_transport_test_san && \
             ./nrf52_ble_transport_test_san
+          g++ -std=c++11 -Wall -Wextra -Werror -DARDUINO_ARCH_NRF52 -DNRF52840_XXAA \
+            -Itests/fakes -Isrc tests/nrf52_internalfs_test.cpp \
+            src/VIA_nRF52_InternalFS.cpp -o nrf52_internalfs_test && ./nrf52_internalfs_test
+          g++ -std=c++11 -Wall -Wextra -Werror -fsanitize=address,undefined \
+            -fno-omit-frame-pointer -DARDUINO_ARCH_NRF52 -DNRF52840_XXAA \
+            -Itests/fakes -Isrc tests/nrf52_internalfs_test.cpp \
+            src/VIA_nRF52_InternalFS.cpp -o nrf52_internalfs_test_san && \
+            ./nrf52_internalfs_test_san
 
   test:
     runs-on: ubuntu-latest

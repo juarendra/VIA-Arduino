@@ -48,9 +48,9 @@ void test_write_dispatch() {
     uint8_t valid_packet[32] = {42};
     uint8_t second_valid_packet[32] = {43};
     
-    // Dispatch invalid sizes
-    assert(FakeBluefruit::dispatchWrite(short_packet, 31) == false);
-    assert(FakeBluefruit::dispatchWrite(long_packet, 33) == false);
+    // Dispatch invalid sizes (fake accepts all, transport rejects bad len)
+    assert(FakeBluefruit::dispatchWrite(short_packet, 31) == true);
+    assert(FakeBluefruit::dispatchWrite(long_packet, 33) == true);
     
     uint8_t received[32] = {0};
     assert(transport.receive(received) == false); // Should have nothing

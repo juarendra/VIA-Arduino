@@ -4,7 +4,9 @@
 #include <stdio.h>
 
 Adafruit_LittleFS_Namespace::LittleFS InternalFS;
+bool g_fake_fs_begin_ok = true;
 bool g_fake_fs_write_fail = false;
+bool g_fake_fs_corrupt_after_write = false;
 
 void test_crc32_record() {
     InternalFS.format();
@@ -121,8 +123,36 @@ void test_storage() {
     }
 }
 
+void test_mount_failure() {
+    uint8_t staging[32] = {};
+    g_fake_fs_begin_ok = false;
+    via::nrf52::InternalFSStorage storage(staging, sizeof(staging));
+    assert(!storage.begin());
+    g_fake_fs_begin_ok = true;
+}
+
+void test_corrupt_write_preserves_previous_slot() {
+    InternalFS.format();
+    uint8_t staging[32] = {};
+    via::nrf52::InternalFSStorage storage(staging, sizeof(staging));
+    assert(storage.begin());
+    staging[0] = 0x11;
+    assert(storage.commit());
+
+    staging[0] = 0x22;
+    g_fake_fs_corrupt_after_write = true;
+    assert(!storage.commit());
+
+    uint8_t recovered[32] = {};
+    via::nrf52::InternalFSStorage restarted(recovered, sizeof(recovered));
+    assert(restarted.begin());
+    assert(recovered[0] == 0x11);
+}
+
 int main() {
     test_crc32_record();
+    test_mount_failure();
+    test_corrupt_write_preserves_previous_slot();
     test_storage();
     printf("PASS\n");
     return 0;

@@ -6,7 +6,9 @@
 #include <string>
 #include <vector>
 
+extern bool g_fake_fs_begin_ok;
 extern bool g_fake_fs_write_fail;
+extern bool g_fake_fs_corrupt_after_write;
 
 namespace Adafruit_LittleFS_Namespace {
   enum {
@@ -53,6 +55,11 @@ namespace Adafruit_LittleFS_Namespace {
     }
 
     void close() {
+        if (data_ && mode_ == FILE_O_WRITE &&
+            ::g_fake_fs_corrupt_after_write && !data_->empty()) {
+            data_->back() ^= 0xFF;
+            ::g_fake_fs_corrupt_after_write = false;
+        }
         data_ = nullptr;
         error_ = true;
     }
@@ -66,7 +73,7 @@ namespace Adafruit_LittleFS_Namespace {
 
   class LittleFS {
   public:
-    bool begin() { return true; }
+    bool begin() { return g_fake_fs_begin_ok; }
     
     File open(const char* filepath, int mode) {
         if (mode == FILE_O_READ) {

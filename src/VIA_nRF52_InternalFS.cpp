@@ -41,7 +41,7 @@ InternalFSStorage::InternalFSStorage(uint8_t* staging, size_t capacity)
 }
 
 bool InternalFSStorage::begin() {
-  InternalFS.begin();
+  if (!InternalFS.begin()) return false;
   
   bool aValid = false;
   uint32_t aGen = 0;
@@ -194,8 +194,20 @@ bool InternalFSStorage::commit() {
     return false;
   }
   
-  // payload validation (optional but robust, skip if memory restricted, let's skip payload re-read to save time since it's flash, CRC of header is enough? Wait, let's just assume header validation is enough or read all). Let's read all to validate correctly.
+  uint32_t payloadCrc = 0xFFFFFFFF;
+  uint32_t remaining = readHeader.length;
+  while (remaining > 0) {
+    uint8_t chunk[256];
+    const size_t toRead = remaining > sizeof(chunk) ? sizeof(chunk) : remaining;
+    if (file.read(chunk, toRead) != toRead) {
+      file.close();
+      return false;
+    }
+    payloadCrc = crc32(chunk, toRead, payloadCrc);
+    remaining -= toRead;
+  }
   file.close();
+  if (payloadCrc != readHeader.crc32) return false;
 
   activeGeneration_ = nextGen;
   return true;

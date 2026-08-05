@@ -1,5 +1,7 @@
 #pragma once
 
+#if defined(ARDUINO_ARCH_NRF52) && defined(NRF52840_XXAA)
+
 #include "VIA_Protocol.h"
 
 #include <stdint.h>
@@ -28,3 +30,5 @@ class InternalFSStorage : public via::Storage {
 
 }  // namespace nrf52
 }  // namespace via
+
+#endif

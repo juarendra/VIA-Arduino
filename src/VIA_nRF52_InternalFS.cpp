@@ -1,4 +1,7 @@
 #include "VIA_nRF52_InternalFS.h"
+
+#if defined(ARDUINO_ARCH_NRF52) && defined(NRF52840_XXAA)
+
 #include <InternalFileSystem.h>
 
 extern "C" {
@@ -205,3 +208,5 @@ bool InternalFSStorage::erase() {
 
 }  // namespace nrf52
 }  // namespace via
+
+#endif

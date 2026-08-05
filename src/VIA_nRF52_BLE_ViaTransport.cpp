@@ -1,4 +1,7 @@
 #include "VIA_nRF52_BLE_ViaTransport.h"
+
+#if defined(ARDUINO_ARCH_NRF52) && defined(NRF52840_XXAA)
+
 #include <cstring>
 
 namespace via {
@@ -125,3 +128,5 @@ BLEService& BLEViaTransport::service() {
 
 } // namespace nrf52
 } // namespace via
+
+#endif

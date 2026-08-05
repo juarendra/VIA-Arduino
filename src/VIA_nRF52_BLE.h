@@ -2,7 +2,7 @@
 #if defined(ARDUINO_ARCH_NRF52) && defined(NRF52840_XXAA)
 #include <Arduino.h>
 #include <bluefruit.h>
-#include "VIA_HID.h"
+#include "VIA_Keyboard.h"
 
 namespace via { namespace nrf52 {
 

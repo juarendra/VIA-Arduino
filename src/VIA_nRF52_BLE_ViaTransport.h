@@ -1,5 +1,7 @@
 #pragma once
 
+#if defined(ARDUINO_ARCH_NRF52) && defined(NRF52840_XXAA)
+
 #include "VIA_Protocol.h"
 #include <bluefruit.h>
 
@@ -49,3 +51,5 @@ class BLEViaTransport : public via::Transport {
 
 } // namespace nrf52
 } // namespace via
+
+#endif

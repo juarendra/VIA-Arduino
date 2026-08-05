@@ -6,6 +6,8 @@
 #include <string>
 #include <vector>
 
+extern bool g_fake_fs_write_fail;
+
 namespace Adafruit_LittleFS_Namespace {
   enum {
     FILE_O_READ = 1,
@@ -36,8 +38,7 @@ namespace Adafruit_LittleFS_Namespace {
         if (error_ || !data_ || mode_ != FILE_O_WRITE) return 0;
         
         // Simulating failure
-        extern bool g_fake_fs_write_fail;
-        if (g_fake_fs_write_fail) {
+        if (::g_fake_fs_write_fail) {
             return 0; 
         }
 
@@ -92,4 +93,3 @@ namespace Adafruit_LittleFS_Namespace {
 }
 
 extern Adafruit_LittleFS_Namespace::LittleFS InternalFS;
-extern bool g_fake_fs_write_fail;

@@ -4,10 +4,6 @@
 
 #include <InternalFileSystem.h>
 
-extern "C" {
-uint32_t crc32_compute(uint8_t const * p_data, uint32_t size, uint32_t const * p_crc);
-}
-
 namespace via {
 namespace nrf52 {
 
@@ -22,9 +18,14 @@ struct RecordHeader {
   uint32_t crc32;
 };
 
-static uint32_t crc32(const uint8_t* data, size_t size) {
-  uint32_t init_crc = 0xFFFFFFFF;
-  return crc32_compute(data, size, &init_crc);
+static uint32_t crc32(const uint8_t* data, size_t size, uint32_t crc = 0xFFFFFFFF) {
+  for (size_t i = 0; i < size; ++i) {
+    crc ^= data[i];
+    for (uint8_t bit = 0; bit < 8; ++bit) {
+      crc = (crc >> 1) ^ (0xEDB88320UL & (0U - (crc & 1U)));
+    }
+  }
+  return crc;
 }
 
 static bool newer(uint32_t a, uint32_t b) {
@@ -55,7 +56,7 @@ bool InternalFSStorage::begin() {
             uint8_t chunk[256];
             size_t toRead = remaining > sizeof(chunk) ? sizeof(chunk) : remaining;
             if (fileA.read(chunk, toRead) != toRead) { crcOk = false; break; }
-            fileCrc = crc32_compute(chunk, toRead, &fileCrc);
+            fileCrc = crc32(chunk, toRead, fileCrc);
             remaining -= toRead;
         }
         if (crcOk && fileCrc == header.crc32) {
@@ -79,7 +80,7 @@ bool InternalFSStorage::begin() {
             uint8_t chunk[256];
             size_t toRead = remaining > sizeof(chunk) ? sizeof(chunk) : remaining;
             if (fileB.read(chunk, toRead) != toRead) { crcOk = false; break; }
-            fileCrc = crc32_compute(chunk, toRead, &fileCrc);
+            fileCrc = crc32(chunk, toRead, fileCrc);
             remaining -= toRead;
         }
         if (crcOk && fileCrc == header.crc32) {

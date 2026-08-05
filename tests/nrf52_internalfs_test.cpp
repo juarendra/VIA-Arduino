@@ -6,16 +6,22 @@
 Adafruit_LittleFS_Namespace::LittleFS InternalFS;
 bool g_fake_fs_write_fail = false;
 
-extern "C" uint32_t crc32_compute(uint8_t const * p_data, uint32_t size, uint32_t const * p_crc) {
-    uint32_t crc;
-    crc = (p_crc == NULL) ? 0xFFFFFFFF : *p_crc;
-    for (uint32_t i = 0; i < size; i++) {
-        crc = crc ^ p_data[i];
-        for (uint32_t j = 8; j > 0; j--) {
-            crc = (crc >> 1) ^ (0xEDB88320 & (-(crc & 1)));
-        }
-    }
-    return crc;
+void test_crc32_record() {
+    InternalFS.format();
+    g_fake_fs_write_fail = false;
+    uint8_t staging[] = {'1', '2', '3', '4', '5', '6', '7', '8', '9'};
+    via::nrf52::InternalFSStorage storage(staging, sizeof(staging));
+    assert(storage.begin());
+    assert(storage.commit());
+
+    struct Header { uint32_t magic, generation, length, crc; } header = {};
+    const std::vector<uint8_t>& record = InternalFS.files_.at("/via_a.dat");
+    assert(record.size() == sizeof(header) + sizeof(staging));
+    memcpy(&header, record.data(), sizeof(header));
+    assert(header.magic == 0x56494146);
+    assert(header.generation == 1);
+    assert(header.length == sizeof(staging));
+    assert(header.crc == 0x340BC6D9);
 }
 
 void test_storage() {
@@ -81,7 +87,7 @@ void test_storage() {
     {
         Adafruit_LittleFS_Namespace::File fA = InternalFS.open("/via_a.dat", Adafruit_LittleFS_Namespace::FILE_O_WRITE);
         struct { uint32_t magic, gen, len, crc; } hdrA = { 0x56494146, 0xFFFFFFFF, sizeof(genWrapStaging), 0 };
-        hdrA.crc = crc32_compute(genWrapStaging, sizeof(genWrapStaging), NULL);
+        hdrA.crc = 0x38E3FFEE; // CRC32 state for 4096 zero bytes
         fA.write((const uint8_t*)&hdrA, sizeof(hdrA));
         fA.write(genWrapStaging, sizeof(genWrapStaging));
         fA.close();
@@ -114,6 +120,7 @@ void test_storage() {
 }
 
 int main() {
+    test_crc32_record();
     test_storage();
     printf("PASS\n");
     return 0;

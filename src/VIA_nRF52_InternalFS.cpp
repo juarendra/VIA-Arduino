@@ -29,9 +29,6 @@ static uint32_t crc32(const uint8_t* data, size_t size, uint32_t crc = 0xFFFFFFF
       }
     }
   }
-  return ~crc;
-}
-  }
   return crc;
 }
 
@@ -56,7 +53,7 @@ bool InternalFSStorage::begin() {
     RecordHeader header;
     if (fileA.read(reinterpret_cast<uint8_t*>(&header), sizeof(header)) == sizeof(header)) {
       if (header.magic == kMagic && header.length == capacity_) {
-        uint32_t fileCrc = 0xFFFFFFFF;
+        uint32_t fileCrc = 0;
         uint32_t remaining = header.length;
         bool crcOk = true;
         while (remaining > 0) {
@@ -80,7 +77,7 @@ bool InternalFSStorage::begin() {
     RecordHeader header;
     if (fileB.read(reinterpret_cast<uint8_t*>(&header), sizeof(header)) == sizeof(header)) {
       if (header.magic == kMagic && header.length == capacity_) {
-        uint32_t fileCrc = 0xFFFFFFFF;
+        uint32_t fileCrc = 0;
         uint32_t remaining = header.length;
         bool crcOk = true;
         while (remaining > 0) {

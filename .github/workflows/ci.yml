@@ -113,6 +113,15 @@ jobs:
           g++ -std=c++11 -Wall -Wextra -Werror -DARDUINO_ARCH_NRF52 -DNRF52840_XXAA \
             -Itests/fakes -Isrc tests/nrf52_gpio_hid_test.cpp -o nrf52_gpio_hid_test && \
             ./nrf52_gpio_hid_test
+          g++ -std=c++11 -Wall -Wextra -Werror -DARDUINO_ARCH_NRF52 -DNRF52840_XXAA -DTESTING_ENVIRONMENT \
+            -Itests/fakes -Isrc tests/nrf52_ble_transport_test.cpp \
+            src/VIA_nRF52_BLE_ViaTransport.cpp tests/fakes/bluefruit.cpp -o nrf52_ble_transport_test && \
+            ./nrf52_ble_transport_test
+          g++ -std=c++11 -Wall -Wextra -Werror -fsanitize=address,undefined \
+            -fno-omit-frame-pointer -DARDUINO_ARCH_NRF52 -DNRF52840_XXAA -DTESTING_ENVIRONMENT \
+            -Itests/fakes -Isrc tests/nrf52_ble_transport_test.cpp \
+            src/VIA_nRF52_BLE_ViaTransport.cpp tests/fakes/bluefruit.cpp -o nrf52_ble_transport_test_san && \
+            ./nrf52_ble_transport_test_san
 
   test:
     runs-on: ubuntu-latest

@@ -229,7 +229,16 @@ composite class (boot keyboard + VIA Raw HID), dual-slot atomic flash
 storage, and a ROM USART bootloader coordinator. All are compile-tested
 against STM32duino 3.0.0.
 
-## 6. Test in VIA
+## BLE Transports (Bluefruit)
+
+- **MTU:** Must negotiate a minimum MTU of 35 bytes (VIA packet + headers) for reliable AirVIA transfers.
+- **Ownership:** The VIA transport expects to own the BLE stack initialization.
+- **Advertising:** Must include the proper Service UUID in the advertising payload for VIA discovery.
+- **Concurrency:** BLE callbacks and the main `loop()` must be protected by a mutex when accessing shared protocol state.
+- **Packet Size:** Must rigorously enforce the 32-byte VIA packet size.
+- **Storage:** Use a dual-slot record strategy to prevent data loss during writes. Do not auto-format corrupt filesystems.
+
+## 7. Test in VIA
 
 1. Use a unique USB VID/PID appropriate for your product.
 2. Create a V3 definition JSON that has the same matrix rows, columns, layers,

@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Added
+- nRF52840 (nice!nano v2) platform adapters: Bluefruit BLE HID, AirVIA GATT transport, InternalFS (LittleFS) storage.
+- `nice_nano_v2_VIA_BLE` example sketch and VIA JSON definition.
+- Native tests and compile gates for nRF52 adapters.
+
 ## 0.4.0-experimental — 2026-08-02
 
 ### Added

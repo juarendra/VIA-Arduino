@@ -1,6 +1,6 @@
 # VIA-Arduino
 
-[![Version](https://img.shields.io/badge/version-0.4.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.5.0--experimental-blue.svg)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 VIA-Arduino is a portable C++11 firmware library for Arduino-compatible
@@ -19,6 +19,7 @@ CI verifies these configurations on every push:
   boot-keyboard, EEPROM).
 - STM32F103 (compile-only, Cube USB adapters, hardware not yet tested).
 - ESP32-S3 (compile-only, dual-mode USB+BLA adapter, hardware not yet tested).
+- nRF52840 (nice!nano v2) compilation with Adafruit Bluefruit (AirVIA BLE transport). Hardware not yet tested.
 
 Other architectures may work through the portable interfaces, but are not
 verified by this project.
@@ -196,6 +197,32 @@ through **Sketch > Include Library > Add .ZIP Library...**.
 
 ESP32-S3 examples additionally need NimBLE-Arduino and ESP32-BLE-Keyboard
 from the Arduino Library Manager.
+
+## nice!nano v2 Installation (Experimental)
+
+Requires **Adafruit nRF52 BSP 1.7.0** (pin to exactly this version).
+Select board: **Pro Micro nRF52840**.
+
+To flash:
+1. Double-tap the reset button quickly to enter the UF2 bootloader.
+2. The board will appear as a USB drive (e.g., `NICENANO`).
+3. Compile and upload from Arduino IDE.
+
+**Wiring Table Example:**
+```text
+Rows: D0, D1
+Columns: D2, D3, D4
+Each switch connects one row to one column; active-low with pull-ups.
+```
+
+### AirVIA BLE Workflow
+
+1. Pair the keyboard via OS Bluetooth settings.
+2. Open a Chromium-based browser (Chrome/Edge) and navigate to VIA.
+3. Use the AirVIA connection method (Web Bluetooth).
+4. Load the `nice_nano_v2_VIA_BLE.json` design file if prompted.
+5. Sync, remap keys, and verify changes persist after a reset or power cycle.
+6. **Recovery:** If connection fails, remove the BLE bond from your OS and explicitly erase VIA storage by clearing the internal file system.
 
 ## License
 

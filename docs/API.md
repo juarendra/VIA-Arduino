@@ -157,3 +157,10 @@ commands.
 `#include <VIA_ESP32S3_NVS.h>` — Preferences NVS persistence.  
 `#include <VIA_ESP32S3_BLE.h>` — NimBLE BLE HID keyboard.  
 `#include <VIA_ESP32S3_BLE_ViaTransport.h>` — NimBLE GATT VIA transport (AirVIA).
+
+### nRF52840 / Bluefruit Support
+
+- `BLEKeyboardHID`: Implements HID keyboard reports over Bluefruit BLE.
+- `BLEViaTransport`: Implements VIA protocol over BLE GATT (AirVIA). Note: Bluefruit must not be initialized globally before the adapter. It enforces single-stack ownership.
+- `InternalFSStorage`: Uses LittleFS on internal flash for persistence. Requires a dual-slot record strategy. No auto-format is performed to protect existing user data.
+- `MatrixIOArduino`: Uses standard Arduino GPIO functions.

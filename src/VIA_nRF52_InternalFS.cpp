@@ -22,8 +22,15 @@ static uint32_t crc32(const uint8_t* data, size_t size, uint32_t crc = 0xFFFFFFF
   for (size_t i = 0; i < size; ++i) {
     crc ^= data[i];
     for (uint8_t bit = 0; bit < 8; ++bit) {
-      crc = (crc >> 1) ^ (0xEDB88320UL & (0U - (crc & 1U)));
+      if (crc & 1) {
+        crc = (crc >> 1) ^ 0xEDB88320;
+      } else {
+        crc = (crc >> 1);
+      }
     }
+  }
+  return ~crc;
+}
   }
   return crc;
 }

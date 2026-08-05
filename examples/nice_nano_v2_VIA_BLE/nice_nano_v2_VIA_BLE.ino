@@ -1,13 +1,24 @@
 #include <Arduino.h>
+#include <Adafruit_TinyUSB.h>
 #include <bluefruit.h>
-
-#include <VIA.h>
+#include <VIA_Arduino.h>
+#include <VIA_Keycodes.h>
+#include <VIA_Keyboard.h>
+#include <VIA_Matrix.h>
+#include <VIA_Encoder.h>
+#include <VIA_Battery.h>
+#include <VIA_SleepMgr.h>
+#include <VIA_nRF52_GPIO.h>
+#include <VIA_nRF52_InternalFS.h>
+#include <VIA_nRF52_BLE.h>
+#include <VIA_nRF52_BLE_ViaTransport.h>
+#include <VIA_TinyUSB_RawHID.h>
+#include <VIA_TinyUSB_Keyboard.h>
 
 // Pins for row and column matrix
-static const uint8_t rowPins[2] = {D0, D1};
-static const uint8_t colPins[3] = {D2, D3, D4};
+static const via::Pin rowPins[2] = {D0, D1};
+static const via::Pin colPins[3] = {D2, D3, D4};
 
-// Required variables for the VIA matrix and keymap
 static constexpr uint8_t ROWS = 2;
 static constexpr uint8_t COLS = 3;
 static constexpr uint8_t LAYERS = 2;
@@ -26,37 +37,59 @@ static constexpr uint16_t KC_5 = 0x0022;
 static constexpr uint16_t KC_TRNS = 0x0001;
 static constexpr uint16_t MO_1 = 0x5221;
 
-static uint16_t keymap[LAYERS][ROWS][COLS] = {
-    // Layer 0
-    {
-        {KC_A, KC_B, KC_C},
-        {KC_D, KC_E, MO_1}
-    },
-    // Layer 1
-    {
-        {KC_1, KC_2, KC_3},
-        {KC_4, KC_5, KC_TRNS}
-    }
+static uint32_t rawRows[2]       = {};
+static uint32_t candidateRows[2] = {};
+static uint32_t stableRows[2]    = {};
+static uint32_t changedRows[2]   = {};
+
+via::nrf52::MatrixIOArduino matrixIO;
+
+via::MatrixConfig matrixConfig = {
+    ROWS, COLS, rowPins, colPins, via::kColToRow, 30, 5,
+    rawRows, candidateRows, stableRows, changedRows
 };
 
-// BLE Services
-BLEHidAdafruit bleHid;
+via::Matrix matrix(matrixConfig, matrixIO);
 
-// VIA adapters
-AirVIA::Adapters::AdafruitNrf52BleKeyboardAdapter bleKeyboard(&bleHid);
-AirVIA::Adapters::AdafruitNrf52BleViaAdapter bleVia;
-AirVIA::Adapters::EepromStorageAdapter storage(4096);
+static uint16_t keymap[LAYERS * ROWS * COLS] = {};
+static const uint16_t defaultKeymap[LAYERS * ROWS * COLS] = {
+    // Layer 0
+    KC_A, KC_B, KC_C,
+    KC_D, KC_E, MO_1,
+    // Layer 1
+    KC_1, KC_2, KC_3,
+    KC_4, KC_5, KC_TRNS
+};
 
-static uint8_t loadBuffer[sizeof(keymap) + sizeof(uint32_t)] = {};
-AirVIA::Protocol protocol(bleVia, storage, loadBuffer, sizeof(loadBuffer));
-AirVIA::Keyboard keyboard(protocol, bleKeyboard, rowPins, ROWS, colPins, COLS, keymap[0][0], sizeof(keymap), LAYERS);
+via::Config protocolConfig = {
+    ROWS, COLS, LAYERS, keymap, defaultKeymap,
+    nullptr, 0, 0, 1, 750
+};
+
+via::nrf52::InternalFSStorage storage;
+
+via::tinyusb::RawHID viaRawHid;
+via::tinyusb::Keyboard usbKeyboard;
+
+via::Protocol protocol(protocolConfig, viaRawHid, &storage);
+
+BLEDis bledis;
+BLEHidAdafruit bleHidSvc;
+via::nrf52::BLEKeyboardHID bleHid(bleHidSvc);
+via::nrf52::BLEViaTransport bleVia;
+
+static uint16_t activeCodes[ROWS * COLS] = {};
+static via::KeyboardCallbacks keyboardCallbacks;
+
+via::Keyboard keyboard({ROWS, COLS}, matrix, protocol, bleHid,
+                       activeCodes, &keyboardCallbacks);
 
 void startAdvertising() {
     Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
     Bluefruit.Advertising.addTxPower();
     Bluefruit.Advertising.addAppearance(BLE_APPEARANCE_HID_KEYBOARD);
     
-    Bluefruit.Advertising.addService(bleHid);
+    Bluefruit.Advertising.addService(bleHidSvc);
     Bluefruit.Advertising.addService(bleVia.getService());
     
     Bluefruit.ScanResponse.addName();
@@ -68,22 +101,32 @@ void startAdvertising() {
 }
 
 void setup() {
+    storage.begin();
+    viaRawHid.begin("VIA Raw HID");
+    usbKeyboard.begin("VIA Keyboard");
+    bleVia.begin("AirVIA KB", 0x00000001);
+    protocol.begin(millis());
+
     Bluefruit.configPrphBandwidth(BANDWIDTH_HIGH);
     Bluefruit.begin(1, 0);
     Bluefruit.setName("AirVIA nice!nano");
     Bluefruit.setTxPower(4);
     Bluefruit.setAppearance(BLE_APPEARANCE_HID_KEYBOARD);
-    bleHid.begin();
-    bleKeyboard.begin();
-    bleVia.begin("AirVIA nice!nano", 0x00000001);
-    storage.begin();
-    protocol.begin(millis());
+    bleHidSvc.begin();
+    
     keyboard.begin();
     startAdvertising();
 }
 
 void loop() {
     uint32_t now = millis();
+
+    uint8_t blePacket[via::kPacketSize];
+    if (bleVia.receive(blePacket)) {
+        protocol.process(blePacket, now);
+        bleVia.send(blePacket);
+    }
+
     protocol.task(now);
     keyboard.task(now);
 }

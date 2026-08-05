@@ -52,6 +52,8 @@ via::MatrixConfig matrixConfig = {
 via::Matrix matrix(matrixConfig, matrixIO);
 
 static uint16_t keymap[LAYERS * ROWS * COLS] = {};
+static uint8_t loadBuffer[sizeof(keymap) + sizeof(uint32_t)] = {};
+static uint8_t storageStaging[128] = {};
 static const uint16_t defaultKeymap[LAYERS * ROWS * COLS] = {
     // Layer 0
     KC_A, KC_B, KC_C,
@@ -63,10 +65,11 @@ static const uint16_t defaultKeymap[LAYERS * ROWS * COLS] = {
 
 via::Config protocolConfig = {
     ROWS, COLS, LAYERS, keymap, defaultKeymap,
-    nullptr, 0, 0, 1, 750
+    nullptr, 0, 0, 1, 750, 0, 0, nullptr, nullptr,
+    loadBuffer, sizeof(loadBuffer)
 };
 
-via::nrf52::InternalFSStorage storage;
+via::nrf52::InternalFSStorage storage(storageStaging, sizeof(storageStaging));
 
 via::tinyusb::RawHID viaRawHid;
 via::tinyusb::Keyboard usbKeyboard;
@@ -90,7 +93,7 @@ void startAdvertising() {
     Bluefruit.Advertising.addAppearance(BLE_APPEARANCE_HID_KEYBOARD);
     
     Bluefruit.Advertising.addService(bleHidSvc);
-    Bluefruit.Advertising.addService(bleVia.getService());
+    Bluefruit.Advertising.addService(bleVia.service());
     
     Bluefruit.ScanResponse.addName();
     

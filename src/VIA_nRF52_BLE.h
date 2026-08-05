@@ -33,7 +33,8 @@ class BLEKeyboardHID : public via::KeyboardHID {
   bool configured() const override { return Bluefruit.connected(); }
   
   bool send(const via::KeyboardReport& report) override {
-    return service.keyboardReport(report.modifiers, report.keys);
+    return service.keyboardReport(report.modifiers,
+                                  const_cast<uint8_t*>(report.keys));
   }
   
   bool sendComplete() override { return true; }

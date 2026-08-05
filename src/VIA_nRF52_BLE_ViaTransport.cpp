@@ -9,13 +9,6 @@ namespace nrf52 {
 
 BLEViaTransport* BLEViaTransport::activeTransport_ = nullptr;
 
-// Used in testing mock
-#ifdef TESTING_ENVIRONMENT
-// handled globally
-#else
-extern BLEAdafruit Bluefruit;
-#endif
-
 BLEViaTransport::BLEViaTransport() 
     : service_(0xFF60),
       ff61_(0xFF61),
@@ -39,10 +32,7 @@ bool BLEViaTransport::begin(const char* deviceName, uint32_t firmwareVersion) {
                         CHR_PROPS_WRITE_WO_RESP | CHR_PROPS_NOTIFY);
     ff61_.setPermission(SECMODE_OPEN, SECMODE_OPEN);
     ff61_.setFixedLen(kPacketSize);
-    // Cast for FakeBluefruit vs real Bluefruit compatibility
-    ff61_.setWriteCallback((WriteCallback_t)[](uint16_t conn, uint8_t* data, uint16_t len) {
-        onWrite(conn, nullptr, data, len);
-    });
+    ff61_.setWriteCallback(onWrite);
     ff61_.begin();
     ff61_.write(responseBuffer_, kPacketSize); // Init read fallback buffer
     

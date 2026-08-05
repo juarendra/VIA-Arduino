@@ -12,8 +12,6 @@
 #define SECMODE_NO_ACCESS 2
 #endif
 
-typedef void (*WriteCallback_t)(uint16_t, uint8_t*, uint16_t);
-
 class BLEService {
 public:
     BLEService(uint16_t uuid = 0) : uuid(uuid) {}
@@ -23,11 +21,13 @@ public:
 
 class BLECharacteristic {
 public:
+    typedef void (*write_cb_t)(uint16_t, BLECharacteristic*, uint8_t*, uint16_t);
+
     BLECharacteristic(uint16_t uuid = 0) : uuid(uuid) {}
     void setProperties(uint8_t p) { props = p; }
     void setPermission(uint8_t read, uint8_t write) { readPerm = read; writePerm = write; }
     void setFixedLen(uint16_t len) { fixedLen = len; }
-    void setWriteCallback(WriteCallback_t cb) { writeCb = cb; }
+    void setWriteCallback(write_cb_t cb) { writeCb = cb; }
     void begin();
     uint16_t write(const void* data, uint16_t len);
     bool notify(const void* data, uint16_t len);
@@ -38,7 +38,7 @@ public:
     uint8_t readPerm;
     uint8_t writePerm;
     uint16_t fixedLen;
-    WriteCallback_t writeCb = nullptr;
+    write_cb_t writeCb = nullptr;
 };
 
 
@@ -72,7 +72,7 @@ struct FakeBluefruit {
   static uint16_t ff62Uuid;
   static uint8_t ff62Value[32];
   
-  static WriteCallback_t ff61Cb;
+  static BLECharacteristic::write_cb_t ff61Cb;
   static uint8_t ff61Written[32];
   static bool ff61Notifying;
   static bool ff61NotifySuccess;
@@ -95,7 +95,7 @@ struct FakeBluefruit {
       if (len != 32) return false;
       if (ff61Cb) {
           // Const cast for test mock only
-          ff61Cb(0, (uint8_t*)data, len);
+          ff61Cb(0, nullptr, (uint8_t*)data, len);
           return true;
       }
       return false;

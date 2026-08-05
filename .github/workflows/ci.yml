@@ -163,4 +163,26 @@ jobs:
         run: |
           arduino-cli compile --fqbn rp2040:rp2040:rpipico:usbstack=tinyusb \
             --libraries . examples/RP2040_VIA_RawHID
+      - name: Test nice!nano installer idempotence
+        run: |
+          TEMP_CORE=$(mktemp -d)
+          mkdir -p "$TEMP_CORE/packages/adafruit/hardware/nrf52/1.7.0/variants"
+          touch "$TEMP_CORE/packages/adafruit/hardware/nrf52/1.7.0/boards.txt"
+          bash .github/scripts/install-nice-nano-variant.sh "$TEMP_CORE"
+          bash .github/scripts/install-nice-nano-variant.sh "$TEMP_CORE"
+          # Check variant directory exists
+          [ -d "$TEMP_CORE/packages/adafruit/hardware/nrf52/1.7.0/variants/pro_micro_nrf52840" ]
+          # Check board block added only once
+          [ $(grep -c "promicronrf52840.name" "$TEMP_CORE/packages/adafruit/hardware/nrf52/1.7.0/boards.txt") -eq 1 ]
+      - name: Install Adafruit nRF52 core and nice!nano variant
+        run: |
+          arduino-cli config add board_manager.additional_urls \
+            https://adafruit.github.io/arduino-board-index/package_adafruit_index.json
+          arduino-cli core update-index
+          arduino-cli core install adafruit:nrf52@1.7.0
+          bash .github/scripts/install-nice-nano-variant.sh "$HOME/.arduino15"
+      - name: Compile nice!nano BLE example
+        run: |
+          arduino-cli compile --fqbn adafruit:nrf52:promicronrf52840 \
+            --libraries . examples/nice_nano_v2_VIA_BLE
 

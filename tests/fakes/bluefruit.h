@@ -72,6 +72,14 @@ struct FakeBluefruit {
   static uint16_t ff62Uuid;
   static uint8_t ff62Value[32];
   
+  static uint8_t ff61Properties;
+  static uint8_t ff61ReadPermission;
+  static uint8_t ff61WritePermission;
+  static uint8_t ff62Properties;
+  static uint8_t ff62ReadPermission;
+  static uint8_t ff62WritePermission;
+  static uint16_t ff62FixedLength;
+  
   static BLECharacteristic::write_cb_t ff61Cb;
   static uint8_t ff61Written[32];
   static bool ff61Notifying;
@@ -89,16 +97,19 @@ struct FakeBluefruit {
       ff61Notifying = false;
       ff61NotifySuccess = false;
       ff61NotifyCount = 0;
+      ff61Properties = 0;
+      ff61ReadPermission = 0;
+      ff61WritePermission = 0;
+      ff62Properties = 0;
+      ff62ReadPermission = 0;
+      ff62WritePermission = 0;
+      ff62FixedLength = 0;
   }
   
   static bool dispatchWrite(const uint8_t* data, uint16_t len) {
-      if (len != 32) return false;
-      if (ff61Cb) {
-          // Const cast for test mock only
-          ff61Cb(0, nullptr, (uint8_t*)data, len);
-          return true;
-      }
-      return false;
+    if (!ff61Cb) return false;
+    ff61Cb(0, nullptr, const_cast<uint8_t*>(data), len);
+    return true;
   }
 };
 extern FakeBluefruit Bluefruit;

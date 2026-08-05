@@ -17,12 +17,19 @@ BLEViaTransport::BLEViaTransport()
       droppedPackets_(0) {
     memset(requestBuffer_, 0, kPacketSize);
     memset(responseBuffer_, 0, kPacketSize);
-    mutex_ = xSemaphoreCreateMutex();
+#if defined(ARDUINO_ARCH_NRF52) && !defined(TESTING_ENVIRONMENT)
+    mutex_ = xSemaphoreCreateMutexStatic(&mutexStorage_);
+#else
+    mutex_ = xSemaphoreCreateMutexStatic(&mutexStorage_);
+#endif
+}
+
+BLEViaTransport::~BLEViaTransport() {
+  if (activeTransport_ == this) activeTransport_ = nullptr;
 }
 
 bool BLEViaTransport::begin(const char* deviceName, uint32_t firmwareVersion) {
-    (void)deviceName; // Bluefruit global name is set by sketch, not us
-    
+    if (!deviceName || !mutex_ || activeTransport_) return false;
     activeTransport_ = this;
     
     service_.begin();
@@ -43,6 +50,10 @@ bool BLEViaTransport::begin(const char* deviceName, uint32_t firmwareVersion) {
     info[2] = (firmwareVersion >> 8) & 0xFF;
     info[3] = firmwareVersion & 0xFF;
     
+    size_t nameLength = strlen(deviceName);
+    if (nameLength > 28) nameLength = 28;
+    memcpy(info + 4, deviceName, nameLength);
+    
     ff62_.setProperties(CHR_PROPS_READ);
     ff62_.setPermission(SECMODE_OPEN, SECMODE_NO_ACCESS); // Read-only
     ff62_.setFixedLen(kPacketSize);
@@ -56,26 +67,24 @@ void BLEViaTransport::onWrite(uint16_t conn_hdl, BLECharacteristic* chr, uint8_t
     (void)conn_hdl;
     (void)chr;
     
-    if (len != kPacketSize) return;
-    
-    if (activeTransport_) {
-        xSemaphoreTake(activeTransport_->mutex_, 0); // Non-blocking take in IRQ/Callback context
+    if (!activeTransport_ || len != kPacketSize) return;
+    if (!xSemaphoreTake(activeTransport_->mutex_, 0)) return;
         
-        if (activeTransport_->pendingRequest_) {
-            activeTransport_->droppedPackets_++;
-        } else {
-            memcpy(activeTransport_->requestBuffer_, data, kPacketSize);
-            activeTransport_->pendingRequest_ = true;
-        }
-        
-        xSemaphoreGive(activeTransport_->mutex_);
+    if (activeTransport_->pendingRequest_) {
+        activeTransport_->droppedPackets_++;
+    } else {
+        memcpy(activeTransport_->requestBuffer_, data, kPacketSize);
+        activeTransport_->pendingRequest_ = true;
     }
+    
+    xSemaphoreGive(activeTransport_->mutex_);
 }
 
 bool BLEViaTransport::receive(uint8_t packet[kPacketSize]) {
     bool hasPacket = false;
     
-    xSemaphoreTake(mutex_, 10);
+    if (!xSemaphoreTake(mutex_, 10)) return false;
+    
     if (pendingRequest_) {
         memcpy(packet, requestBuffer_, kPacketSize);
         pendingRequest_ = false;

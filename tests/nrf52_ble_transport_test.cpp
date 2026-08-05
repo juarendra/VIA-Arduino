@@ -7,6 +7,7 @@
 
 // Define static variables of FakeBluefruit here for tests
 extern FakeBluefruit Bluefruit;
+bool g_fake_mutex_take = true;
 
 void test_initialization() {
     FakeBluefruit::reset();
@@ -23,6 +24,18 @@ void test_initialization() {
     assert(FakeBluefruit::ff62Value[1] == 0x02);
     assert(FakeBluefruit::ff62Value[2] == 0x03);
     assert(FakeBluefruit::ff62Value[3] == 0x04);
+    
+    assert(FakeBluefruit::ff61Properties ==
+           (CHR_PROPS_READ | CHR_PROPS_WRITE |
+            CHR_PROPS_WRITE_WO_RESP | CHR_PROPS_NOTIFY));
+    assert(FakeBluefruit::ff61ReadPermission == SECMODE_OPEN);
+    assert(FakeBluefruit::ff61WritePermission == SECMODE_OPEN);
+    assert(FakeBluefruit::ff62Properties == CHR_PROPS_READ);
+    assert(FakeBluefruit::ff62ReadPermission == SECMODE_OPEN);
+    assert(FakeBluefruit::ff62WritePermission == SECMODE_NO_ACCESS);
+    assert(FakeBluefruit::ff62FixedLength == via::kPacketSize);
+    assert(memcmp(FakeBluefruit::ff62Value + 4,
+                  "1234567890123456789012345678", 28) == 0);
 }
 
 void test_write_dispatch() {
@@ -85,8 +98,39 @@ void test_send() {
     assert(transport.send(packet) == false);
 }
 
+void test_short_name_zero_padding() {
+    FakeBluefruit::reset();
+    via::nrf52::BLEViaTransport transport;
+    assert(transport.begin("AirVIA", 1));
+    assert(memcmp(FakeBluefruit::ff62Value + 4, "AirVIA", 6) == 0);
+    for (size_t i = 10; i < 32; ++i) assert(FakeBluefruit::ff62Value[i] == 0);
+}
+
+void test_lock_failure_drops_packet() {
+    FakeBluefruit::reset();
+    via::nrf52::BLEViaTransport transport;
+    assert(transport.begin("AirVIA", 1));
+    uint8_t packet[32] = {42};
+    uint8_t received[32] = {};
+    g_fake_mutex_take = false;
+    assert(FakeBluefruit::dispatchWrite(packet, sizeof(packet)));
+    g_fake_mutex_take = true;
+    assert(!transport.receive(received));
+}
+
+void test_rejects_second_live_instance() {
+    FakeBluefruit::reset();
+    via::nrf52::BLEViaTransport first;
+    via::nrf52::BLEViaTransport second;
+    assert(first.begin("AirVIA", 1));
+    assert(!second.begin("AirVIA", 1));
+}
+
 int main() {
     test_initialization();
+    test_short_name_zero_padding();
+    test_lock_failure_drops_packet();
+    test_rejects_second_live_instance();
     test_write_dispatch();
     test_send();
     std::cout << "All tests passed!" << std::endl;

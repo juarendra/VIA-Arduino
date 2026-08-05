@@ -10,9 +10,13 @@
 #include "semphr.h"
 #else
 // Fake FreeRTOS for tests
+struct StaticSemaphore_t {};
 typedef void* SemaphoreHandle_t;
-inline SemaphoreHandle_t xSemaphoreCreateMutex() { return (SemaphoreHandle_t)1; }
-inline bool xSemaphoreTake(SemaphoreHandle_t, int) { return true; }
+extern bool g_fake_mutex_take;
+inline SemaphoreHandle_t xSemaphoreCreateMutexStatic(StaticSemaphore_t* storage) {
+  return storage;
+}
+inline bool xSemaphoreTake(SemaphoreHandle_t, int) { return g_fake_mutex_take; }
 inline void xSemaphoreGive(SemaphoreHandle_t) {}
 #endif
 
@@ -22,6 +26,7 @@ namespace nrf52 {
 class BLEViaTransport : public via::Transport {
  public:
   BLEViaTransport();
+  ~BLEViaTransport() override;
   
   bool begin(const char* deviceName = "AirVIA", uint32_t firmwareVersion = 1);
   bool receive(uint8_t packet[kPacketSize]) override;
@@ -42,6 +47,11 @@ class BLEViaTransport : public via::Transport {
   uint8_t requestBuffer_[kPacketSize];
   uint8_t responseBuffer_[kPacketSize];
   
+#if defined(ARDUINO_ARCH_NRF52) && !defined(TESTING_ENVIRONMENT)
+  StaticSemaphore_t mutexStorage_;
+#else
+  StaticSemaphore_t mutexStorage_;
+#endif
   SemaphoreHandle_t mutex_;
   volatile bool pendingRequest_;
   volatile uint32_t droppedPackets_;

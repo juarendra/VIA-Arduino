@@ -11,6 +11,13 @@ uint8_t FakeBluefruit::ff61Written[32] = {0};
 bool FakeBluefruit::ff61Notifying = false;
 bool FakeBluefruit::ff61NotifySuccess = false;
 int FakeBluefruit::ff61NotifyCount = 0;
+uint8_t FakeBluefruit::ff61Properties = 0;
+uint8_t FakeBluefruit::ff61ReadPermission = 0;
+uint8_t FakeBluefruit::ff61WritePermission = 0;
+uint8_t FakeBluefruit::ff62Properties = 0;
+uint8_t FakeBluefruit::ff62ReadPermission = 0;
+uint8_t FakeBluefruit::ff62WritePermission = 0;
+uint16_t FakeBluefruit::ff62FixedLength = 0;
 FakeBluefruit Bluefruit;
 
 void BLEService::begin() {
@@ -20,10 +27,17 @@ void BLEService::begin() {
 void BLECharacteristic::begin() {
     if (uuid == 0xFF61) {
         FakeBluefruit::ff61Uuid = uuid;
+        FakeBluefruit::ff61Properties = props;
+        FakeBluefruit::ff61ReadPermission = readPerm;
+        FakeBluefruit::ff61WritePermission = writePerm;
         FakeBluefruit::ff61FixedLength = fixedLen;
         FakeBluefruit::ff61Cb = writeCb;
     } else if (uuid == 0xFF62) {
         FakeBluefruit::ff62Uuid = uuid;
+        FakeBluefruit::ff62Properties = props;
+        FakeBluefruit::ff62ReadPermission = readPerm;
+        FakeBluefruit::ff62WritePermission = writePerm;
+        FakeBluefruit::ff62FixedLength = fixedLen;
     }
 }
 

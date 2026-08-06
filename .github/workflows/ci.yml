@@ -189,12 +189,35 @@ jobs:
           arduino-cli core update-index
           arduino-cli core install adafruit:nrf52@1.7.0
           bash .github/scripts/install-nice-nano-variant.sh "$HOME/.arduino15"
-      - name: Compile nice!nano BLE example
+      - name: Compile nice!nano firmware and acceptance corruptor
         run: |
+          mkdir -p build/nice_nano build/corruptor
           arduino-cli compile --fqbn adafruit:nrf52:promicronrf52840 \
-            --libraries . examples/nice_nano_v2_VIA_BLE
-      - name: Compile nice!nano storage corruptor
+            --libraries . --output-dir build/nice_nano \
+            examples/nice_nano_v2_VIA_BLE
+          arduino-cli compile --fqbn adafruit:nrf52:promicronrf52840 \
+            --libraries . --output-dir build/corruptor \
+            extras/nice_nano_storage_corruptor
+      - name: Build UF2 acceptance artifacts
         run: |
-          arduino-cli compile --fqbn adafruit:nrf52:promicronrf52840 \
-            --libraries . extras/nice_nano_storage_corruptor
+          CORE="$HOME/.arduino15/packages/adafruit/hardware/nrf52/1.7.0"
+          FIRMWARE_HEX=$(find build/nice_nano -maxdepth 1 -name '*.hex' -print -quit)
+          CORRUPTOR_HEX=$(find build/corruptor -maxdepth 1 -name '*.hex' -print -quit)
+          test -n "$FIRMWARE_HEX"
+          test -n "$CORRUPTOR_HEX"
+          python "$CORE/tools/uf2conv/uf2conv.py" -f 0xADA52840 -c \
+            -o build/nice_nano_v2_VIA_BLE.uf2 "$FIRMWARE_HEX"
+          python "$CORE/tools/uf2conv/uf2conv.py" -f 0xADA52840 -c \
+            -o build/nice_nano_storage_corruptor.uf2 "$CORRUPTOR_HEX"
+          sha256sum build/*.uf2 > build/SHA256SUMS.txt
+      - name: Upload nice!nano acceptance artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nice-nano-v2-${{ github.sha }}
+          path: |
+            build/nice_nano_v2_VIA_BLE.uf2
+            build/nice_nano_storage_corruptor.uf2
+            build/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 30
 

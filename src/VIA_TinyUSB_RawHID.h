@@ -2,6 +2,7 @@
 
 #include "VIA_Protocol.h"
 
+#if defined(__has_include)
 #if __has_include(<Adafruit_TinyUSB.h>)
 
 #define VIA_ARDUINO_HAS_TINYUSB 1
@@ -44,3 +45,8 @@ class RawHID : public Transport {
 #define VIA_ARDUINO_HAS_TINYUSB 0
 
 #endif  // __has_include(<Adafruit_TinyUSB.h>)
+#else
+
+#define VIA_ARDUINO_HAS_TINYUSB 0
+
+#endif  // defined(__has_include)

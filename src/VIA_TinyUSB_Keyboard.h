@@ -1,5 +1,6 @@
 #pragma once
 
+#if defined(__has_include)
 #if __has_include(<Adafruit_TinyUSB.h>)
 
 #include <Adafruit_TinyUSB.h>
@@ -25,3 +26,4 @@ class Keyboard {
 }  // namespace via
 
 #endif  // __has_include(<Adafruit_TinyUSB.h>)
+#endif  // defined(__has_include)

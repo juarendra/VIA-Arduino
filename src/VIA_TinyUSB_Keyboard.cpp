@@ -1,5 +1,6 @@
 #include "VIA_TinyUSB_Keyboard.h"
 
+#if defined(__has_include)
 #if __has_include(<Adafruit_TinyUSB.h>)
 
 namespace via {
@@ -38,4 +39,5 @@ bool Keyboard::ready() { return hid_.ready(); }
 }  // namespace tinyusb
 }  // namespace via
 
-#endif
+#endif  // __has_include(<Adafruit_TinyUSB.h>)
+#endif  // defined(__has_include)

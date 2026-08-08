@@ -1,5 +1,6 @@
 #pragma once
 
+#if defined(__has_include)
 #if __has_include(<EEPROM.h>)
 
 #include <EEPROM.h>
@@ -49,4 +50,9 @@ class EEPROMStorage : public Storage {
 
 #error "VIA_EEPROMStorage requires an Arduino core that provides EEPROM.h"
 
-#endif
+#endif  // __has_include(<EEPROM.h>)
+#else
+
+#error "VIA_EEPROMStorage requires a compiler that supports __has_include"
+
+#endif  // defined(__has_include)

@@ -1,5 +1,6 @@
 #include "VIA_TinyUSB_RawHID.h"
 
+#if defined(__has_include)
 #if __has_include(<Adafruit_TinyUSB.h>)
 
 #include <string.h>
@@ -91,4 +92,5 @@ void RawHID::setReport(uint8_t reportId, hid_report_type_t reportType,
 }  // namespace tinyusb
 }  // namespace via
 
-#endif
+#endif  // __has_include(<Adafruit_TinyUSB.h>)
+#endif  // defined(__has_include)

@@ -6,3 +6,14 @@ build/
 *.elf
 *.hex
 *.bin
+
+# Test binaries
+*_test
+*_test_san
+
+# Artifacts
+artifacts/
+
+# Scratch files
+*.md.bak
+test_*

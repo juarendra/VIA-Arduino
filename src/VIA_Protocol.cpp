@@ -311,6 +311,7 @@ void Protocol::resetBuffers() {
   }
   if (config_.macroBytes) memset(config_.macros, 0, config_.macroBytes);
   layoutOptions_ = config_.defaultLayoutOptions;
+  if (customValue_) customValue_->reset();
 }
 
 void Protocol::markDirty(uint32_t nowMs) {
@@ -489,8 +490,13 @@ bool Protocol::factoryReset() {
   memcpy(config_.loadBuffer + staged, &config_.defaultLayoutOptions,
          sizeof(config_.defaultLayoutOptions));
   staged += sizeof(config_.defaultLayoutOptions);
-  if (customSize) memset(config_.loadBuffer + staged, 0, customSize);
   const size_t customOffset = bytes - customSize;
+  if (customSize) {
+    customValue_->reset();
+    if (!customValue_->saveState(config_.loadBuffer + customOffset, customSize)) {
+      memset(config_.loadBuffer + staged, 0, customSize);
+    }
+  }
   if (customSize &&
       !customValue_->validateState(config_.loadBuffer + customOffset,
                                    customSize)) {

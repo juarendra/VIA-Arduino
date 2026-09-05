@@ -6,7 +6,7 @@
 VIA-Arduino is a portable C++11 firmware library for Arduino-compatible
 microcontrollers that implements the VIA protocol v13, matrix scanning,
 debounce, layer/keycode processing, 6KRO keyboard reports, and platform
-adapters for RP2040, STM32F103, and ESP32-S3.
+adapters for RP2040, STM32F103, ESP32-S3, and ESP32 (WROOM-32, BLE-only).
 
 ## Tested Targets
 
@@ -18,7 +18,10 @@ CI verifies these configurations on every push:
 - Raspberry Pi Pico (RP2040) compilation with Adafruit TinyUSB (Raw HID,
   boot-keyboard, EEPROM).
 - STM32F103 (compile-only, Cube USB adapters, hardware not yet tested).
-- ESP32-S3 (compile-only, dual-mode USB+BLA adapter, hardware not yet tested).
+- ESP32-S3 (compile-only, dual-mode USB+BLE adapter, hardware not yet tested).
+- ESP32 (WROOM-32) native adapter tests for the BLE transport, NVS storage,
+  and GPIO with `-Wall -Wextra -Werror`, plus ASan/UBSan for the BLE
+  transport, and arduino-cli compilation of the BLE-only reference sketch.
 - nRF52840 (nice!nano v2) compilation with Adafruit Bluefruit (AirVIA BLE transport). Hardware not yet tested.
 
 Other architectures may work through the portable interfaces, but are not
@@ -113,6 +116,10 @@ basic HID usages, physical modifiers, `QK_MODS`, `MO`, `TG`, `TO`, `DF`,
 | `VIA_ESP32S3_GPIO` | ESP32-S3 | Arduino GPIO matrix IO |
 | `VIA_ESP32S3_NVS` | ESP32-S3 | Preferences NVS persistence |
 | `VIA_ESP32S3_BLE` | ESP32-S3 | NimBLE BLE HID keyboard adapter |
+| `VIA_ESP32_GPIO` | ESP32 (WROOM-32/S3) | Arduino GPIO matrix IO |
+| `VIA_ESP32_NVS` | ESP32 (WROOM-32/S3) | NVS persistence with 4 KB shadow blob |
+| `VIA_ESP32_BLE` | ESP32 (WROOM-32/S3) | NimBLE 2.x BLE HID keyboard adapter |
+| `VIA_ESP32_BLE_ViaTransport` | ESP32 (WROOM-32/S3) | AirVIA BLE GATT VIA transport (NimBLE 2.x) |
 
 ### Examples
 
@@ -122,6 +129,9 @@ basic HID usages, physical modifiers, `QK_MODS`, `MO`, `TG`, `TO`, `DF`,
   wired keyboard reference
 - [`ESP32S3_VIA_BLE`](examples/ESP32S3_VIA_BLE) — compile-only wireless
   keyboard with USB VIA config and BLE typing
+- [`ESP32_WROOM32_VIA_BLE`](examples/ESP32_WROOM32_VIA_BLE) — BLE-only
+  wireless keyboard for ESP32-WROOM-32 (no USB); VIA config and typing both
+  over AirVIA BLE
 
 ## Persistence
 
@@ -195,8 +205,9 @@ Unsupported commands and invalid gated operations return `0xFF` in byte 0.
 Install `VIA_Arduino` from Arduino Library Manager, or install a release ZIP
 through **Sketch > Include Library > Add .ZIP Library...**.
 
-ESP32-S3 examples additionally need NimBLE-Arduino and ESP32-BLE-Keyboard
-from the Arduino Library Manager.
+ESP32 examples additionally need NimBLE-Arduino from the Arduino Library
+Manager. The ESP32 (WROOM-32/S3) adapters are built against NimBLE-Arduino
+2.x; the BLE HID keyboard (`BleKeyboard`) ships with the ESP32 core.
 
 ## nice!nano v2 Installation (Experimental)
 

@@ -206,20 +206,30 @@ keyboard.task(millis());
 See `docs/API.md` for the full Matrix, Keyboard, Encoder, Battery, and
 SleepMgr API reference.
 
-### ESP32-S3 adapters
+### ESP32 (WROOM-32 and S3) adapters
 
-`VIA_ESP32S3_GPIO.h`, `VIA_ESP32S3_NVS.h`, and `VIA_ESP32S3_BLE.h` provide
-GPIO matrix IO, NVS persistence (via Preferences), and BLE HID keyboard
-(via NimBLE-Arduino and ESP32-BLE-Keyboard). The existing RP2040
-`VIA_TinyUSB_RawHID.h` adapter compiles for ESP32-S3 as well.
+Generic ESP32 adapters under `via::esp32` (guarded by `ARDUINO_ARCH_ESP32`):
 
-The dual-mode sketch at `examples/ESP32S3_VIA_BLE` uses USB for VIA
-configuration and BLE for wireless typing. It requires NimBLE-Arduino,
-ESP32-BLE-Keyboard, and Adafruit TinyUSB from the Arduino Library Manager.
-WiFi is not used. A sleep manager is included for deep sleep on idle.
+- `VIA_ESP32_GPIO.h` — Arduino `pinMode`/`digitalRead` matrix IO.
+- `VIA_ESP32_NVS.h` — `via::Storage` over Preferences with a 4 KB RAM
+  shadow blob; real NVS only has whole-blob `getBytes`/`putBytes`, so all
+  writes are provisional until `commit()`.
+- `VIA_ESP32_BLE.h` — BLE HID keyboard adapter over the core's
+  `BleKeyboard` (NimBLE backend).
+- `VIA_ESP32_BLE_ViaTransport.h` — AirVIA BLE GATT VIA transport
+  (128-bit `0000FF60-...` service, FF61 data, FF62 identity) built against
+  the NimBLE-Arduino 2.x API.
 
-ESP32-WROOM-32 (classic) is not supported because it lacks a USB device
-peripheral.
+The `examples/ESP32_WROOM32_VIA_BLE` sketch is the reference for
+ESP32-WROOM-32, which has no USB device peripheral: both VIA configuration
+and typing run over AirVIA BLE. It requires NimBLE-Arduino 2.x from the
+Arduino Library Manager.
+
+`VIA_ESP32S3_GPIO.h`, `VIA_ESP32S3_NVS.h`, and `VIA_ESP32S3_BLE.h` remain
+for the S3 dual-mode sketch at `examples/ESP32S3_VIA_BLE`, which uses USB
+for VIA configuration and BLE for wireless typing. Note that the S3
+adapters target the older NimBLE-Arduino 1.x callback signatures and have
+not been compile-verified against 2.x.
 
 ### STM32F103 adapters
 

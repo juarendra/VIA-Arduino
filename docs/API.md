@@ -151,7 +151,14 @@ commands.
 `#include <VIA_STM32F1_Flash.h>` — dual-slot atomic flash.  
 `#include <VIA_STM32F1_Boot.h>` — ROM USART bootloader coordinator.
 
-### ESP32-S3
+### ESP32 (WROOM-32 / S3)
+
+`#include <VIA_ESP32_GPIO.h>` — Arduino `pinMode`/`digitalRead`.  
+`#include <VIA_ESP32_NVS.h>` — NVS persistence with 4 KB shadow blob.  
+`#include <VIA_ESP32_BLE.h>` — NimBLE 2.x BLE HID keyboard.  
+`#include <VIA_ESP32_BLE_ViaTransport.h>` — NimBLE 2.x GATT VIA transport (AirVIA).
+
+### ESP32-S3 (legacy dual-mode)
 
 `#include <VIA_ESP32S3_GPIO.h>` — Arduino `pinMode`/`digitalRead`.  
 `#include <VIA_ESP32S3_NVS.h>` — Preferences NVS persistence.  

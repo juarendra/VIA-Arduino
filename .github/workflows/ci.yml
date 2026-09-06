@@ -137,6 +137,79 @@ jobs:
             src/VIA_nRF52_InternalFS.cpp tests/fakes/bluefruit.cpp -o nrf52_internalfs_test_san && \
             ./nrf52_internalfs_test_san
 
+  esp32-adapters:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate ESP32 shared-server example contracts
+        run: python tests/esp32_shared_server_contract_test.py
+      - name: Build and run ESP32 adapter tests
+        run: |
+          g++ -std=c++11 -Wall -Wextra -Werror -DARDUINO_ARCH_ESP32 -DTESTING_ENVIRONMENT \
+            -Itests/fakes -Isrc tests/esp32_ble_transport_test.cpp \
+            src/VIA_ESP32_BLE_ViaTransport.cpp tests/fakes/nimble.cpp \
+            -o esp32_ble_transport_test && \
+            ./esp32_ble_transport_test
+          g++ -std=c++11 -Wall -Wextra -Werror -DARDUINO_ARCH_ESP32 \
+            -Itests/fakes -Isrc tests/esp32_ble_hid_test.cpp \
+            tests/fakes/nimble.cpp -o esp32_ble_hid_test && \
+            ./esp32_ble_hid_test
+          g++ -std=c++11 -Wall -Wextra -Werror -DARDUINO_ARCH_ESP32 -DTESTING_ENVIRONMENT \
+            -Itests/fakes -Isrc tests/esp32_shared_server_test.cpp \
+            src/VIA_ESP32_BLE_ViaTransport.cpp tests/fakes/nimble.cpp \
+            -o esp32_shared_server_test && \
+            ./esp32_shared_server_test
+          g++ -std=c++11 -Wall -Wextra -Werror -DARDUINO_ARCH_ESP32 \
+            -Itests/fakes -Isrc tests/esp32_nvs_test.cpp -o esp32_nvs_test && \
+            ./esp32_nvs_test
+          g++ -std=c++11 -Wall -Wextra -Werror -DARDUINO_ARCH_ESP32 \
+            -Itests/fakes -Isrc tests/esp32_gpio_test.cpp -o esp32_gpio_test && \
+            ./esp32_gpio_test
+          echo "#include \"VIA_ESP32S3_BLE.h\"" | \
+            g++ -x c++ -std=c++11 -Wall -Wextra -Werror -fsyntax-only \
+            -DARDUINO_ARCH_ESP32 -DCONFIG_IDF_TARGET_ESP32S3 \
+            -DTESTING_ENVIRONMENT -Itests/fakes -Isrc -
+          echo "#include \"VIA_ESP32S3_BLE_ViaTransport.h\"" | \
+            g++ -x c++ -std=c++11 -Wall -Wextra -Werror -fsyntax-only \
+            -DARDUINO_ARCH_ESP32 -DCONFIG_IDF_TARGET_ESP32S3 \
+            -DTESTING_ENVIRONMENT -Itests/fakes -Isrc -
+          g++ -std=c++11 -Wall -Wextra -Werror -DARDUINO_ARCH_ESP32 \
+            -DCONFIG_IDF_TARGET_ESP32S3 -Itests/fakes -Isrc \
+            tests/esp32s3_ble_hid_test.cpp tests/fakes/nimble.cpp \
+            -o esp32s3_ble_hid_test && \
+            ./esp32s3_ble_hid_test
+      - name: Build and run ESP32 BLE transport tests (ASan/UBSan)
+        run: |
+          g++ -std=c++11 -Wall -Wextra -Werror -fsanitize=address,undefined \
+            -fno-omit-frame-pointer -DARDUINO_ARCH_ESP32 -DTESTING_ENVIRONMENT \
+            -Itests/fakes -Isrc tests/esp32_ble_transport_test.cpp \
+            src/VIA_ESP32_BLE_ViaTransport.cpp tests/fakes/nimble.cpp \
+            -o esp32_ble_transport_test_san && \
+            ./esp32_ble_transport_test_san
+          g++ -std=c++11 -Wall -Wextra -Werror -fsanitize=address,undefined \
+            -fno-omit-frame-pointer -DARDUINO_ARCH_ESP32 -DTESTING_ENVIRONMENT \
+            -Itests/fakes -Isrc tests/esp32_shared_server_test.cpp \
+            src/VIA_ESP32_BLE_ViaTransport.cpp tests/fakes/nimble.cpp \
+            -o esp32_shared_server_test_san && \
+            ./esp32_shared_server_test_san
+      - uses: arduino/setup-arduino-cli@v2
+      - name: Install ESP32 core
+        run: |
+          arduino-cli core update-index
+          arduino-cli core install esp32:esp32@3.1.0
+      - name: Install NimBLE-Arduino
+        run: |
+          arduino-cli lib update-index
+          arduino-cli lib install NimBLE-Arduino@2.5.1
+      - name: Compile ESP32-WROOM-32 BLE reference
+        run: |
+          arduino-cli compile --fqbn esp32:esp32:esp32 --libraries . \
+            examples/ESP32_WROOM32_VIA_BLE
+      - name: Compile ESP32-S3 BLE reference
+        run: |
+          arduino-cli compile --fqbn esp32:esp32:esp32s3 --libraries . \
+            examples/ESP32S3_VIA_BLE
+
   test:
     runs-on: ubuntu-latest
     steps:

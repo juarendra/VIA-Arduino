@@ -6,6 +6,8 @@ FakeNimBLE Nimble;
 // Out-of-class definitions of FakeNimBLE static state (C++11 requires them).
 std::string FakeNimBLE::deviceName;
 int FakeNimBLE::initCount = 0;
+int FakeNimBLE::createServerCount = 0;
+int FakeNimBLE::serverStartCount = 0;
 int FakeNimBLE::advertisingStartCount = 0;
 std::vector<std::string> FakeNimBLE::advertisedServiceUuids;
 bool FakeNimBLE::notifySuccess = true;
@@ -13,7 +15,7 @@ int FakeNimBLE::notifyCount = 0;
 std::vector<uint8_t> FakeNimBLE::lastNotified;
 NimBLEServer FakeNimBLE::serverObj;
 NimBLEAdvertising FakeNimBLE::advertisingObj;
-NimBLEService FakeNimBLE::servicePool[2];
+NimBLEService FakeNimBLE::servicePool[4];
 NimBLECharacteristic FakeNimBLE::charPool[8];
 NimBLEConnInfo FakeNimBLE::connInfoObj;
 int FakeNimBLE::serviceIndex = 0;
@@ -43,7 +45,11 @@ bool NimBLEDevice::init(const std::string& deviceName) {
   return true;
 }
 
-NimBLEServer* NimBLEDevice::createServer() { return &Nimble.serverObj; }
+NimBLEServer* NimBLEDevice::createServer() {
+  if (Nimble.initCount == 0) return nullptr;
+  Nimble.createServerCount++;
+  return &Nimble.serverObj;
+}
 
 NimBLEServer* NimBLEDevice::getServer() { return &Nimble.serverObj; }
 
@@ -51,7 +57,7 @@ NimBLEServer* NimBLEDevice::getServer() { return &Nimble.serverObj; }
 // NimBLEServer
 // ---------------------------------------------------------------------------
 NimBLEServer::NimBLEServer() : callbacks_(nullptr), connectedCount_(0),
-                               started_(false) {}
+                                started_(false), startCount_(0) {}
 
 NimBLEServer::~NimBLEServer() {}
 
@@ -62,15 +68,19 @@ void NimBLEServer::setCallbacks(NimBLEServerCallbacks* pCallbacks,
 }
 
 NimBLEService* NimBLEServer::createService(const NimBLEUUID& uuid) {
-  if (Nimble.serviceIndex >= 2) return nullptr;
+  if (Nimble.serviceIndex >= 4) return nullptr;
   NimBLEService* svc = &Nimble.servicePool[Nimble.serviceIndex];
   Nimble.serviceIndex++;
   svc->activate(uuid);
+  svc->server_ = this;
+  services_.push_back(svc);
   return svc;
 }
 
 bool NimBLEServer::start() {
   started_ = true;
+  startCount_++;
+  Nimble.serverStartCount++;
   return true;
 }
 
@@ -82,6 +92,8 @@ void NimBLEServer::deactivate() {
   callbacks_ = nullptr;
   connectedCount_ = 0;
   started_ = false;
+  startCount_ = 0;
+  services_.clear();
 }
 
 // ---------------------------------------------------------------------------
@@ -95,12 +107,19 @@ NimBLECharacteristic* NimBLEService::createCharacteristic(
   NimBLECharacteristic* chr = &Nimble.charPool[Nimble.charIndex];
   Nimble.charIndex++;
   chr->activate(uuid, properties, maxLen);
+  chr->service_ = this;
   return chr;
 }
 
-void NimBLEService::activate(const NimBLEUUID& uuid) { uuid_ = uuid; }
+void NimBLEService::activate(const NimBLEUUID& uuid) {
+  uuid_ = uuid;
+  server_ = nullptr;
+}
 
-void NimBLEService::deactivate() { uuid_ = NimBLEUUID(); }
+void NimBLEService::deactivate() {
+  uuid_ = NimBLEUUID();
+  server_ = nullptr;
+}
 
 // ---------------------------------------------------------------------------
 // NimBLECharacteristic
@@ -136,6 +155,7 @@ void NimBLECharacteristic::activate(const NimBLEUUID& uuid,
   uuid_ = uuid;
   properties_ = properties;
   maxLen_ = maxLen;
+  service_ = nullptr;
   callbacks_ = nullptr;
   static_cast<NimBLEAttValue&>(*this).setValue(nullptr, 0);
   active_ = true;
@@ -174,6 +194,8 @@ bool NimBLEAdvertising::setName(const std::string& name) {
 void FakeNimBLE::reset() {
   deviceName.clear();
   initCount = 0;
+  createServerCount = 0;
+  serverStartCount = 0;
   advertisingStartCount = 0;
   advertisedServiceUuids.clear();
   notifySuccess = true;
@@ -184,7 +206,7 @@ void FakeNimBLE::reset() {
   serverObj.deactivate();
   advertisingObj.serviceUuids_.clear();
   advertisingObj.name_.clear();
-  for (int i = 0; i < 2; ++i) servicePool[i].deactivate();
+  for (int i = 0; i < 4; ++i) servicePool[i].deactivate();
   for (int i = 0; i < 8; ++i) charPool[i].deactivate();
 }
 
@@ -199,12 +221,19 @@ NimBLECharacteristic* FakeNimBLE::findChar(const char* uuidSuffix) {
   return nullptr;
 }
 
-NimBLECharacteristic* FakeNimBLE::createHidInputReport() {
-  if (charIndex >= 8) return nullptr;
-  NimBLECharacteristic* chr = &charPool[charIndex];
-  charIndex++;
-  chr->activate(NimBLEUUID("0x2A4D"), NIMBLE_PROPERTY::NOTIFY, 9);
-  return chr;
+NimBLEService* FakeNimBLE::findService(const char* uuidSuffix) {
+  for (int i = 0; i < 4; ++i) {
+    NimBLEService* svc = &servicePool[i];
+    if (!svc->uuid().str().empty() &&
+        svc->uuid().str().find(uuidSuffix) != std::string::npos) {
+      return svc;
+    }
+  }
+  return nullptr;
+}
+
+NimBLEService* FakeNimBLE::serviceForChar(const NimBLECharacteristic* chr) {
+  return chr ? chr->service() : nullptr;
 }
 
 bool FakeNimBLE::dispatchWrite(const uint8_t* data, size_t len) {
@@ -244,6 +273,7 @@ void FakeNimBLE::disconnect() {
 // ---------------------------------------------------------------------------
 void NimBLEHIDDevice::setReportMap(uint8_t* map, uint16_t size) {
   reportMap_.assign(map, map + size);
+  if (reportMapChar_) reportMapChar_->setValue(map, size);
 }
 
 bool NimBLEHIDDevice::setManufacturer(const std::string& name) {
@@ -253,7 +283,9 @@ bool NimBLEHIDDevice::setManufacturer(const std::string& name) {
 
 NimBLECharacteristic* NimBLEHIDDevice::getInputReport(uint8_t reportId) {
   if (inputReport_ && inputReportId_ == reportId) return inputReport_;
-  inputReport_ = FakeNimBLE::createHidInputReport();
+  if (!hidService_) return nullptr;
+  inputReport_ = hidService_->createCharacteristic(
+      NimBLEUUID("0x2A4D"), NIMBLE_PROPERTY::NOTIFY, 9);
   inputReportId_ = reportId;
   return inputReport_;
 }

@@ -1,6 +1,8 @@
 #pragma once
 #include "NimBLECore.h"
 
+class NimBLEService;
+
 class NimBLECharacteristic : public NimBLEAttValue {
   public:
     NimBLECharacteristic();
@@ -18,6 +20,7 @@ class NimBLECharacteristic : public NimBLEAttValue {
     uint32_t getProperties() const { return properties_; }
     const NimBLEUUID& uuid() const { return uuid_; }
     bool active() const { return active_; }
+    NimBLEService* service() const { return service_; }
 
   private:
     friend class NimBLEService;
@@ -28,6 +31,7 @@ class NimBLECharacteristic : public NimBLEAttValue {
     NimBLEUUID uuid_;
     uint32_t properties_ = 0;
     uint16_t maxLen_ = 0;
+    NimBLEService* service_ = nullptr;
     NimBLECharacteristicCallbacks* callbacks_ = nullptr;
     bool active_ = false;
 };

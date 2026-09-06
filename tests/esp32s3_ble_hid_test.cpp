@@ -5,34 +5,54 @@
 #include "VIA_ESP32S3_BLE.h"
 #include "fakes/NimBLEFake.h"
 
-// The S3 HID adapter must create its services on the shared server before the
-// transport starts it, advertise the HID (0x1812) service and the device name,
-// and reject reports while no central is connected.
-void test_hid_begin_advertises_keyboard() {
-    Nimble.reset();
+// The S3 HID adapter must attach its service to the shared server supplied by
+// the sketch, must not create/start the server, and must reject reports while
+// no central is connected.
+static NimBLEServer* makeServer() {
     assert(NimBLEDevice::init("AirVIA S3"));
-    assert(NimBLEDevice::createServer() != nullptr);
+    NimBLEServer* server = NimBLEDevice::createServer();
+    assert(server != nullptr);
+    assert(Nimble.createServerCount == 1);
+    return server;
+}
+
+void test_hid_begin_rejects_null_server() {
+    Nimble.reset();
+    via::esp32s3::BleKeyboardHID hid;
+    assert(hid.begin(nullptr, "AirVIA S3", "VIA-Arduino") == false);
+}
+
+void test_hid_begin_attaches_shared_service() {
+    Nimble.reset();
+    NimBLEServer* server = makeServer();
 
     via::esp32s3::BleKeyboardHID hid;
-    assert(hid.begin("AirVIA S3", "AirVIA"));
+    assert(hid.begin(server, "AirVIA S3", "VIA-Arduino"));
 
-    bool sawHid = false;
-    for (size_t i = 0; i < Nimble.advertisedServiceUuids.size(); ++i) {
-        if (Nimble.advertisedServiceUuids[i].find("0x1812") !=
-            std::string::npos)
-            sawHid = true;
-    }
-    assert(sawHid);
+    assert(Nimble.createServerCount == 1);
+    assert(Nimble.serverStartCount == 0);
+    assert(Nimble.advertisingStartCount == 0);
 
-    assert(Nimble.advertisingObj.name() == "AirVIA S3");
+    NimBLEService* hidService = Nimble.findService("0x1812");
+    assert(hidService != nullptr);
+    assert(hidService->server() == server);
+
+    NimBLECharacteristic* reportMap = Nimble.findChar("0x2A49");
+    assert(reportMap != nullptr);
+    assert(Nimble.serviceForChar(reportMap) == hidService);
+    assert(reportMap->size() > 0);
+
+    NimBLECharacteristic* inputReport = Nimble.findChar("0x2A4D");
+    assert(inputReport != nullptr);
+    assert(Nimble.serviceForChar(inputReport) == hidService);
+    assert(inputReport->getProperties() == NIMBLE_PROPERTY::NOTIFY);
 }
 
 void test_hid_unconnected_rejects() {
     Nimble.reset();
-    NimBLEDevice::init("AirVIA S3");
-    NimBLEDevice::createServer();
+    NimBLEServer* server = makeServer();
     via::esp32s3::BleKeyboardHID hid;
-    assert(hid.begin("AirVIA S3", "AirVIA"));
+    assert(hid.begin(server, "AirVIA S3", "VIA-Arduino"));
 
     via::KeyboardReport r = {};
     r.modifiers = 0x02;
@@ -46,11 +66,11 @@ void test_hid_unconnected_rejects() {
 
 void test_hid_connected_notifies_report() {
     Nimble.reset();
-    NimBLEDevice::init("AirVIA S3");
-    NimBLEDevice::createServer();
+    NimBLEServer* server = makeServer();
     via::esp32s3::BleKeyboardHID hid;
-    assert(hid.begin("AirVIA S3", "AirVIA"));
+    assert(hid.begin(server, "AirVIA S3", "VIA-Arduino"));
 
+    server->start();
     Nimble.connect();
     assert(hid.configured() == true);
     assert(hid.suspended() == false);
@@ -63,8 +83,6 @@ void test_hid_connected_notifies_report() {
 
     assert(hid.send(r) == true);
 
-    // 9-byte notify payload: report ID + 8-byte boot-keyboard report
-    // [modifiers, reserved, keys[0..5]].
     const uint8_t expected[9] = {
         1,    0x01, 0x00, 0x04, 0x05, 0x00, 0x00, 0x00, 0x1E
     };
@@ -76,7 +94,8 @@ void test_hid_connected_notifies_report() {
 }
 
 int main() {
-    test_hid_begin_advertises_keyboard();
+    test_hid_begin_rejects_null_server();
+    test_hid_begin_attaches_shared_service();
     test_hid_unconnected_rejects();
     test_hid_connected_notifies_report();
     std::cout << "All tests passed!" << std::endl;

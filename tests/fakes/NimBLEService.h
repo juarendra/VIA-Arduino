@@ -2,6 +2,8 @@
 #include "NimBLECore.h"
 #include "NimBLECharacteristic.h"
 
+class NimBLEServer;
+
 class NimBLEService {
   public:
     NimBLEService() {}
@@ -17,6 +19,7 @@ class NimBLEService {
     // source compatibility with older call patterns.
     bool start() { return true; }
     const NimBLEUUID& uuid() const { return uuid_; }
+    NimBLEServer* server() const { return server_; }
 
   private:
     friend class NimBLEServer;
@@ -25,4 +28,5 @@ class NimBLEService {
     void deactivate();
 
     NimBLEUUID uuid_;
+    NimBLEServer* server_ = nullptr;
 };

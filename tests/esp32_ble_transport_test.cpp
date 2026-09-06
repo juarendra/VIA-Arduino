@@ -11,22 +11,36 @@ bool g_fake_mutex_take = true;
 
 static const char* kServiceFF60 = "0000FF60-0000-1000-8000-00805F9B34FB";
 
+static bool beginSharedTransport(via::esp32::BLEViaTransport& transport,
+                                 const char* name, uint32_t version) {
+    assert(NimBLEDevice::init(name));
+    NimBLEServer* server = NimBLEDevice::createServer();
+    assert(server != nullptr);
+    assert(Nimble.createServerCount == 1);
+    assert(transport.begin(server, name, version));
+    return true;
+}
+
 void test_initialization() {
     Nimble.reset();
-
     via::esp32::BLEViaTransport transport;
-    assert(transport.begin("12345678901234567890123456789", 0x01020304));
+    beginSharedTransport(transport, "12345678901234567890123456789",
+                         0x01020304);
 
-    assert(Nimble.deviceName == "12345678901234567890123456789");
+    // Transport attaches GATT only; the sketch owns init, server creation,
+    // start, and advertising.
     assert(Nimble.initCount == 1);
+    assert(Nimble.createServerCount == 1);
+    assert(Nimble.serverStartCount == 0);
+    assert(Nimble.advertisingStartCount == 0);
 
-    // Service UUID advertised.
-    assert(!Nimble.advertisedServiceUuids.empty());
-    assert(Nimble.advertisedServiceUuids[0] == kServiceFF60);
-    assert(Nimble.advertisingStartCount == 1);
+    NimBLEService* service = Nimble.findService(kServiceFF60);
+    assert(service != nullptr);
+    assert(service->server() == &Nimble.serverObj);
 
     NimBLECharacteristic* ff61 = Nimble.findChar("FF61");
     assert(ff61 != nullptr);
+    assert(Nimble.serviceForChar(ff61) == service);
     assert(ff61->getProperties() ==
            (NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::WRITE |
             NIMBLE_PROPERTY::WRITE_NR | NIMBLE_PROPERTY::NOTIFY));
@@ -35,6 +49,7 @@ void test_initialization() {
 
     NimBLECharacteristic* ff62 = Nimble.findChar("FF62");
     assert(ff62 != nullptr);
+    assert(Nimble.serviceForChar(ff62) == service);
     assert(ff62->getProperties() == NIMBLE_PROPERTY::READ);
     assert(ff62->size() == via::kPacketSize);
 
@@ -50,7 +65,7 @@ void test_initialization() {
 void test_write_dispatch() {
     Nimble.reset();
     via::esp32::BLEViaTransport transport;
-    transport.begin("AirVIA", 1);
+    beginSharedTransport(transport, "AirVIA", 1);
 
     uint8_t short_packet[31] = {1};
     uint8_t long_packet[33] = {1};
@@ -79,7 +94,7 @@ void test_write_dispatch() {
 void test_send() {
     Nimble.reset();
     via::esp32::BLEViaTransport transport;
-    transport.begin("AirVIA", 1);
+    beginSharedTransport(transport, "AirVIA", 1);
 
     uint8_t packet[32] = {99};
     NimBLECharacteristic* ff61 = Nimble.findChar("FF61");
@@ -115,7 +130,7 @@ void test_send() {
 void test_subscribe_tracking() {
     Nimble.reset();
     via::esp32::BLEViaTransport transport;
-    transport.begin("AirVIA", 1);
+    beginSharedTransport(transport, "AirVIA", 1);
     Nimble.connect();
 
     assert(transport.subscribers() == 0);
@@ -130,7 +145,7 @@ void test_subscribe_tracking() {
 void test_short_name_zero_padding() {
     Nimble.reset();
     via::esp32::BLEViaTransport transport;
-    assert(transport.begin("AirVIA", 1));
+    beginSharedTransport(transport, "AirVIA", 1);
     NimBLECharacteristic* ff62 = Nimble.findChar("FF62");
     NimBLEAttValue infoValue = ff62->getValue();
     const uint8_t* info = infoValue.data();
@@ -141,7 +156,7 @@ void test_short_name_zero_padding() {
 void test_lock_failure_drops_packet() {
     Nimble.reset();
     via::esp32::BLEViaTransport transport;
-    assert(transport.begin("AirVIA", 1));
+    beginSharedTransport(transport, "AirVIA", 1);
     uint8_t packet[32] = {42};
     uint8_t received[32] = {};
     g_fake_mutex_take = false;
@@ -155,14 +170,14 @@ void test_rejects_second_live_instance() {
     Nimble.reset();
     via::esp32::BLEViaTransport first;
     via::esp32::BLEViaTransport second;
-    assert(first.begin("AirVIA", 1));
-    assert(!second.begin("AirVIA", 1));
+    assert(beginSharedTransport(first, "AirVIA", 1));
+    assert(second.begin(&Nimble.serverObj, "AirVIA", 1) == false);
 }
 
 void test_disconnect_cleanup() {
     Nimble.reset();
     via::esp32::BLEViaTransport transport;
-    assert(transport.begin("AirVIA", 1));
+    beginSharedTransport(transport, "AirVIA", 1);
     Nimble.connect();
 
     uint8_t packet[32] = {7};

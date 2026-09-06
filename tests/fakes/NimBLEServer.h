@@ -16,6 +16,9 @@ class NimBLEServer {
     uint8_t getConnectedCount() const { return connectedCount_; }
     NimBLEAdvertising* getAdvertising();
     NimBLEServerCallbacks* getCallbacks() const { return callbacks_; }
+    int startCount() const { return startCount_; }
+    std::vector<NimBLEService*>& services() { return services_; }
+    const std::vector<NimBLEService*>& services() const { return services_; }
 
   private:
     friend struct FakeNimBLE;
@@ -24,4 +27,6 @@ class NimBLEServer {
     NimBLEServerCallbacks* callbacks_ = nullptr;
     uint8_t connectedCount_ = 0;
     bool started_ = false;
+    int startCount_ = 0;
+    std::vector<NimBLEService*> services_;
 };

@@ -12,12 +12,22 @@
 #include "NimBLECharacteristic.h"
 #include "NimBLECore.h"
 #include "NimBLEServer.h"
+#include "NimBLEService.h"
 
 struct FakeNimBLE;
 
 class NimBLEHIDDevice {
   public:
-    explicit NimBLEHIDDevice(NimBLEServer* server) : server_(server) {}
+    explicit NimBLEHIDDevice(NimBLEServer* server) : server_(server) {
+      if (server_) {
+        hidService_ = server_->createService(NimBLEUUID("0x1812"));
+        if (hidService_) {
+          reportMapChar_ = hidService_->createCharacteristic(
+              NimBLEUUID("0x2A49"),
+              NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::WRITE, 512);
+        }
+      }
+    }
 
     void setReportMap(uint8_t* map, uint16_t size);
     bool setManufacturer(const std::string& name);
@@ -37,6 +47,8 @@ class NimBLEHIDDevice {
   private:
     friend struct FakeNimBLE;
     NimBLEServer* server_;
+    NimBLEService* hidService_ = nullptr;
+    NimBLECharacteristic* reportMapChar_ = nullptr;
     std::vector<uint8_t> reportMap_;
     NimBLECharacteristic* inputReport_ = nullptr;
     uint8_t inputReportId_ = 0;

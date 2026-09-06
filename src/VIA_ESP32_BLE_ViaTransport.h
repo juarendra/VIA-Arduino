@@ -5,8 +5,8 @@
 #include "VIA_Protocol.h"
 
 #if !defined(TESTING_ENVIRONMENT)
-#include "FreeRTOS.h"
-#include "semphr.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #else
 // Fake FreeRTOS for tests
 struct StaticSemaphore_t {};

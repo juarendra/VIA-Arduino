@@ -11,7 +11,7 @@
 
 #include <Arduino.h>
 #include <Adafruit_TinyUSB.h>
-#include <BleKeyboard.h>
+#include <NimBLEDevice.h>
 #include <VIA_Arduino.h>
 #include <VIA_Keycodes.h>
 #include <VIA_Keyboard.h>
@@ -67,8 +67,7 @@ via::tinyusb::Keyboard usbKeyboard;
 via::Protocol protocol(protocolConfig, viaRawHid, &nvs);
 
 // --- BLE ---
-BleKeyboard bleKeyboard("VIA Keyboard", "VIA-Arduino", 100);
-via::esp32s3::BleKeyboardHID bleHid(bleKeyboard);
+via::esp32s3::BleKeyboardHID bleHid;
 via::esp32s3::BLEViaTransport bleVia;
 
 // --- Active Codes ---
@@ -94,13 +93,14 @@ static bool usbActive = false;
 
 // --- Setup ---
 void setup() {
-  nvs.begin();
+  if (!nvs.begin()) return;
   viaRawHid.begin("VIA Raw HID");
   usbKeyboard.begin("VIA Keyboard");
-  bleVia.begin("AirVIA KB", 0x00000001);
-  protocol.begin(millis());
-  bleKeyboard.begin();
-  keyboard.begin();
+  NimBLEDevice::init("AirVIA KB");
+  if (!bleHid.begin("AirVIA KB", "VIA-Arduino")) return;
+  if (!bleVia.begin("AirVIA KB", 0x00000001)) return;
+  if (!protocol.begin(millis())) return;
+  if (!keyboard.begin()) return;
   battery.setCalibration(3200, 4200);
   sleepMgr.configure(300000);
   sleepMgr.update(true, millis());

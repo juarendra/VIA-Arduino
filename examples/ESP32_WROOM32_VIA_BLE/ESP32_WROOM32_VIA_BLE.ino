@@ -15,7 +15,7 @@
  */
 
 #include <Arduino.h>
-#include <BleKeyboard.h>
+#include <NimBLEDevice.h>
 #include <VIA_Arduino.h>
 #include <VIA_Keycodes.h>
 #include <VIA_Keyboard.h>
@@ -133,8 +133,7 @@ via::Config protocolConfig = {
 via::esp32::NVSStorage nvs;
 
 // --- BLE ---
-BleKeyboard bleKeyboard("AirVIA WROOM32", "AirVIA", 100);
-via::esp32::BleKeyboardHID bleHid(bleKeyboard);
+via::esp32::BleKeyboardHID bleHid;
 via::esp32::BLEViaTransport bleVia;
 
 via::Protocol protocol(protocolConfig, bleVia, &nvs);
@@ -147,7 +146,8 @@ via::Keyboard keyboard({ROWS, COLS}, matrix, protocol, bleHid,
 
 void setup() {
     if (!nvs.begin()) return;
-    bleKeyboard.begin();  // NimBLE HID service (void)
+    NimBLEDevice::init("AirVIA WROOM32");
+    if (!bleHid.begin("AirVIA WROOM32", "AirVIA")) return;
     if (!bleVia.begin("AirVIA WROOM32", 0x00000001)) return;
     if (!protocol.begin(millis())) return;
     if (!keyboard.begin()) return;

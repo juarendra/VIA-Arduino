@@ -20,12 +20,20 @@
 - The AirVIA BLE transport for ESP32 targets the NimBLE-Arduino 2.x API:
   characteristic callbacks receive `NimBLEConnInfo`, and subscription state
   is tracked through `onSubscribe()` (NimBLE 1.x had no getter for it).
+- ESP32 BLE HID adapters (`via::esp32` and `via::esp32s3`) now publish a
+  standard 8-byte boot-keyboard report map; with report ID 1 the GATT notify
+  payload is 9 bytes: `[reportId, modifiers, reserved, keys[0..5]]`.
+- `via::esp32s3::BLEViaTransport` is now an alias for the generic
+  `via::esp32::BLEViaTransport` implementation, so the S3 dual-mode sketch
+  shares the NimBLE-Arduino 2.x AirVIA transport.
 - `.gitignore` now excludes stray object files.
 
 ### Fixed
 - Protocol test expectation updated for the 0.3.x factory-reset semantics:
   without a `CustomValue::reset()` override a successful factory reset
   preserves the active custom value (no distinct default exists to restore).
+- ESP32 BLE HID `send()` no longer truncates the 6th keycode or drops the
+  reserved report byte.
 
 ## 0.4.0-experimental — 2026-08-02
 

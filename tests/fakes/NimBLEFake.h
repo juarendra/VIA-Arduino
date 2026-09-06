@@ -26,6 +26,9 @@ struct FakeNimBLE {
 
   static void reset();
   static NimBLECharacteristic* findChar(const char* uuidSuffix);
+  // Allocate a single NOTIFY input-report characteristic for the fake
+  // NimBLEHIDDevice (kept out of the server service pool on purpose).
+  static NimBLECharacteristic* createHidInputReport();
   static bool dispatchWrite(const uint8_t* data, size_t len);
   static void dispatchSubscribe(uint16_t subValue);
   static void connect();

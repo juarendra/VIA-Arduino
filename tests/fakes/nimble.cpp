@@ -1,4 +1,5 @@
 #include "NimBLEFake.h"
+#include "NimBLEHIDDevice.h"
 
 FakeNimBLE Nimble;
 
@@ -162,6 +163,11 @@ bool NimBLEAdvertising::addServiceUUID(const NimBLEUUID& serviceUUID) {
   return true;
 }
 
+bool NimBLEAdvertising::setName(const std::string& name) {
+  name_ = name;
+  return true;
+}
+
 // ---------------------------------------------------------------------------
 // FakeNimBLE
 // ---------------------------------------------------------------------------
@@ -177,6 +183,7 @@ void FakeNimBLE::reset() {
   charIndex = 0;
   serverObj.deactivate();
   advertisingObj.serviceUuids_.clear();
+  advertisingObj.name_.clear();
   for (int i = 0; i < 2; ++i) servicePool[i].deactivate();
   for (int i = 0; i < 8; ++i) charPool[i].deactivate();
 }
@@ -190,6 +197,14 @@ NimBLECharacteristic* FakeNimBLE::findChar(const char* uuidSuffix) {
     }
   }
   return nullptr;
+}
+
+NimBLECharacteristic* FakeNimBLE::createHidInputReport() {
+  if (charIndex >= 8) return nullptr;
+  NimBLECharacteristic* chr = &charPool[charIndex];
+  charIndex++;
+  chr->activate(NimBLEUUID("0x2A4D"), NIMBLE_PROPERTY::NOTIFY, 9);
+  return chr;
 }
 
 bool FakeNimBLE::dispatchWrite(const uint8_t* data, size_t len) {
@@ -220,6 +235,25 @@ void FakeNimBLE::disconnect() {
   Nimble.serverObj.connectedCount_ = 0;
   if (Nimble.serverObj.getCallbacks()) {
     Nimble.serverObj.getCallbacks()->onDisconnect(&Nimble.serverObj,
-                                                  Nimble.connInfoObj, 0x13);
+                                                   Nimble.connInfoObj, 0x13);
   }
+}
+
+// ---------------------------------------------------------------------------
+// NimBLEHIDDevice (fake)
+// ---------------------------------------------------------------------------
+void NimBLEHIDDevice::setReportMap(uint8_t* map, uint16_t size) {
+  reportMap_.assign(map, map + size);
+}
+
+bool NimBLEHIDDevice::setManufacturer(const std::string& name) {
+  (void)name;
+  return true;
+}
+
+NimBLECharacteristic* NimBLEHIDDevice::getInputReport(uint8_t reportId) {
+  if (inputReport_ && inputReportId_ == reportId) return inputReport_;
+  inputReport_ = FakeNimBLE::createHidInputReport();
+  inputReportId_ = reportId;
+  return inputReport_;
 }

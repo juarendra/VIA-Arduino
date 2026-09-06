@@ -214,8 +214,9 @@ Generic ESP32 adapters under `via::esp32` (guarded by `ARDUINO_ARCH_ESP32`):
 - `VIA_ESP32_NVS.h` — `via::Storage` over Preferences with a 4 KB RAM
   shadow blob; real NVS only has whole-blob `getBytes`/`putBytes`, so all
   writes are provisional until `commit()`.
-- `VIA_ESP32_BLE.h` — BLE HID keyboard adapter over the core's
-  `BleKeyboard` (NimBLE backend).
+- `VIA_ESP32_BLE.h` — NimBLE-Arduino 2.x BLE HID keyboard adapter using
+  `NimBLEHIDDevice` and a standard 8-byte boot-keyboard report map (the GATT
+  notify payload is 9 bytes including the report ID).
 - `VIA_ESP32_BLE_ViaTransport.h` — AirVIA BLE GATT VIA transport
   (128-bit `0000FF60-...` service, FF61 data, FF62 identity) built against
   the NimBLE-Arduino 2.x API.
@@ -227,9 +228,10 @@ Arduino Library Manager.
 
 `VIA_ESP32S3_GPIO.h`, `VIA_ESP32S3_NVS.h`, and `VIA_ESP32S3_BLE.h` remain
 for the S3 dual-mode sketch at `examples/ESP32S3_VIA_BLE`, which uses USB
-for VIA configuration and BLE for wireless typing. Note that the S3
-adapters target the older NimBLE-Arduino 1.x callback signatures and have
-not been compile-verified against 2.x.
+for VIA configuration and BLE for wireless typing. The S3 BLE HID adapter
+uses the same NimBLE-Arduino 2.x report map as the generic ESP32 adapter,
+and `via::esp32s3::BLEViaTransport` is an alias for the generic
+`via::esp32::BLEViaTransport` implementation.
 
 ### STM32F103 adapters
 

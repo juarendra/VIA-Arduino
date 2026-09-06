@@ -147,8 +147,18 @@ via::Keyboard keyboard({ROWS, COLS}, matrix, protocol, bleHid,
 void setup() {
     if (!nvs.begin()) return;
     NimBLEDevice::init("AirVIA WROOM32");
-    if (!bleHid.begin("AirVIA WROOM32", "AirVIA")) return;
-    if (!bleVia.begin("AirVIA WROOM32", 0x00000001)) return;
+    NimBLEServer* server = NimBLEDevice::createServer();
+    if (!server) return;
+    if (!bleHid.begin(server, "AirVIA WROOM32", "AirVIA")) return;
+    if (!bleVia.begin(server, "AirVIA WROOM32", 0x00000001)) return;
+    server->start();
+    NimBLEAdvertising* adv = server->getAdvertising();
+    if (!adv) return;
+    adv->addServiceUUID(NimBLEUUID("0x1812"));
+    adv->addServiceUUID(NimBLEUUID(
+        "0000FF60-0000-1000-8000-00805F9B34FB"));
+    adv->setName("AirVIA WROOM32");
+    adv->start();
     if (!protocol.begin(millis())) return;
     if (!keyboard.begin()) return;
 

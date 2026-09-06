@@ -54,7 +54,7 @@ class BLEViaTransport : public via::Transport {
   BLEViaTransport();
   ~BLEViaTransport() override;
 
-  bool begin(const char* deviceName = "AirVIA",
+  bool begin(NimBLEServer* server, const char* deviceName = "AirVIA",
              uint32_t fwVersion = 0x00000001);
 
   bool receive(uint8_t packet[kPacketSize]) override;

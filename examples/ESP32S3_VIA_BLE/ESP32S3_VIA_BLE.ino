@@ -2,15 +2,14 @@
  * ESP32-S3 Wireless VIA Keyboard reference for VIA_Arduino.
  *
  * SoC: ESP32-S3-WROOM-1 (custom PCB)
- * Core: espressif/esp32 v3.0.x, USB Mode: TinyUSB
+ * Core: espressif/esp32 v3.0.x or newer, NimBLE-Arduino 2.x (2.5.x)
  *
  * 5 rows x 15 columns x 4 layers, COL2ROW, active-low
- * Dual-mode: USB for VIA config + wired typing, BLE for wireless typing
+ * VIA configuration and typing both go over BLE (AirVIA FF60 GATT).
  * This example compiles but is NOT hardware-verified.
  */
 
 #include <Arduino.h>
-#include <Adafruit_TinyUSB.h>
 #include <NimBLEDevice.h>
 #include <VIA_Arduino.h>
 #include <VIA_Keycodes.h>
@@ -23,8 +22,6 @@
 #include <VIA_ESP32S3_NVS.h>
 #include <VIA_ESP32S3_BLE.h>
 #include <VIA_ESP32S3_BLE_ViaTransport.h>
-#include <VIA_TinyUSB_RawHID.h>
-#include <VIA_TinyUSB_Keyboard.h>
 
 // --- Matrix: 5 rows x 15 cols ---
 static const via::Pin rowPins[5]  = {5, 6, 7, 15, 16};
@@ -51,24 +48,25 @@ via::Matrix matrix(matrixConfig, matrixIO);
 static uint16_t keymap[5 * 15 * 4]        = {};
 static const uint16_t defaultKeymap[5 * 15 * 4] = {};
 
-via::Config protocolConfig = {
-    5, 15, 4, keymap, defaultKeymap,
-    nullptr, 0, 0, 1, 750
-};
-
 // --- Persistence ---
 via::esp32s3::NVSStorage nvs;
-
-// --- USB ---
-via::tinyusb::RawHID viaRawHid;
-via::tinyusb::Keyboard usbKeyboard;
-
-// --- Protocol ---
-via::Protocol protocol(protocolConfig, viaRawHid, &nvs);
 
 // --- BLE ---
 via::esp32s3::BleKeyboardHID bleHid;
 via::esp32s3::BLEViaTransport bleVia;
+
+// --- Protocol ---
+// Required staging space = keymap + layoutOptions (4 bytes),
+// per Protocol::requiredLoadBufferSize().
+static uint8_t loadBuffer[sizeof(keymap) + sizeof(uint32_t)] = {};
+
+via::Config protocolConfig = {
+    5, 15, 4, keymap, defaultKeymap,
+    nullptr, 0, 0, 0x00000001, 750, 0, 0, nullptr, nullptr,
+    loadBuffer, sizeof(loadBuffer)
+};
+
+via::Protocol protocol(protocolConfig, bleVia, &nvs);
 
 // --- Active Codes ---
 static uint16_t activeCodes[5 * 15] = {};
@@ -88,49 +86,34 @@ via::BatteryMgr battery;
 // --- Sleep ---
 via::SleepMgr sleepMgr;
 
-// --- State ---
-static bool usbActive = false;
-
 // --- Setup ---
 void setup() {
   if (!nvs.begin()) return;
-  viaRawHid.begin("VIA Raw HID");
-  usbKeyboard.begin("VIA Keyboard");
-  NimBLEDevice::init("AirVIA KB");
-  if (!bleHid.begin("AirVIA KB", "VIA-Arduino")) return;
-  if (!bleVia.begin("AirVIA KB", 0x00000001)) return;
+  NimBLEDevice::init("AirVIA S3");
+  NimBLEServer* server = NimBLEDevice::createServer();
+  if (!server) return;
+  if (!bleHid.begin(server, "AirVIA S3", "VIA-Arduino")) return;
+  if (!bleVia.begin(server, "AirVIA S3", 0x00000001)) return;
+  server->start();
+  NimBLEAdvertising* adv = server->getAdvertising();
+  if (!adv) return;
+  adv->addServiceUUID(NimBLEUUID("0x1812"));
+  adv->addServiceUUID(NimBLEUUID(
+      "0000FF60-0000-1000-8000-00805F9B34FB"));
+  adv->setName("AirVIA S3");
+  adv->start();
   if (!protocol.begin(millis())) return;
   if (!keyboard.begin()) return;
   battery.setCalibration(3200, 4200);
   sleepMgr.configure(300000);
   sleepMgr.update(true, millis());
-
-  usbActive = TinyUSBDevice.mounted();
 }
 
 // --- Loop ---
 void loop() {
   uint32_t now = millis();
-  bool mounted = TinyUSBDevice.mounted();
-
-  if (mounted != usbActive) {
-    usbActive = mounted;
-    // ponytail: swap HID transport at mode change
-    keyboard = via::Keyboard({5, 15}, matrix, protocol,
-                              usbActive ? static_cast<via::KeyboardHID&>(usbKeyboard)
-                                        : static_cast<via::KeyboardHID&>(bleHid),
-                              activeCodes, &keyboardCallbacks);
-    keyboard.begin();
-  }
-
-  // VIA over BLE (AirVIA transport)
-  uint8_t blePacket[via::kPacketSize];
-  if (bleVia.receive(blePacket)) {
-    protocol.process(blePacket, now);
-    bleVia.send(blePacket);
-  }
-
   protocol.task(now);
+  matrix.task(now);
   keyboard.task(now);
 
   encoder.update(digitalRead(4), digitalRead(3), now);

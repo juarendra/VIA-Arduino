@@ -53,26 +53,28 @@ const uint8_t kReportId = 1;
 
 /* NimBLE HID keyboard report adapter for ESP32-S3 boards.
  *
- * Hosts a standard 6-key rollover keyboard report map (report ID 1) on the
- * shared NimBLE server and publishes reports through the 0x2A4D input report
- * characteristic. begin() must run after NimBLEDevice::init() and before the
- * server is started, so the HID service is present when the GATT database is
- * built. The NimBLEHIDDevice lives for the device lifetime (never torn down). */
+ * Hosts a standard 6-key rollover keyboard report map (report ID 1) on a
+ * shared NimBLE server supplied by the sketch and publishes reports through
+ * the 0x2A4D input report characteristic. The sketch owns NimBLEDevice::init,
+ * createServer, server start, and advertising; begin() only attaches the HID
+ * service and must run before the server is started so the GATT database is
+ * complete. The NimBLEHIDDevice lives for the device lifetime (never torn
+ * down). */
 class BleKeyboardHID : public via::KeyboardHID {
- public:
+  public:
   BleKeyboardHID() = default;
+  ~BleKeyboardHID() { delete hid_; }
 
-  bool begin(const char* deviceName, const char* manufacturer) {
-    server_ = NimBLEDevice::createServer();
-    if (!server_) return false;
+  bool begin(NimBLEServer* server, const char* deviceName,
+             const char* manufacturer) {
+    if (!server || !manufacturer) return false;
+    static_cast<void>(deviceName);
+    server_ = server;
     hid_ = new NimBLEHIDDevice(server_);
+    if (!hid_) return false;
     hid_->setManufacturer(manufacturer);
     hid_->setReportMap(const_cast<uint8_t*>(kReportMap), sizeof(kReportMap));
     inputReport_ = hid_->getInputReport(kReportId);
-    if (NimBLEAdvertising* adv = server_->getAdvertising()) {
-      adv->setName(deviceName);
-      adv->addServiceUUID(NimBLEUUID("0x1812"));
-    }
     return inputReport_ != nullptr;
   }
 

@@ -55,22 +55,22 @@ BLEViaTransport::~BLEViaTransport() {
   if (activeTransport_ == this) activeTransport_ = nullptr;
 }
 
-bool BLEViaTransport::begin(const char* deviceName, uint32_t fwVersion) {
-  if (!deviceName || !mutex_ || activeTransport_) return false;
-  activeTransport_ = this;
+bool BLEViaTransport::begin(NimBLEServer* server, const char* deviceName,
+                            uint32_t fwVersion) {
+  if (!server || !deviceName || !mutex_ || activeTransport_) return false;
 
-  NimBLEDevice::init(deviceName);
-
-  server_ = NimBLEDevice::createServer();
+  server_ = server;
   server_->setCallbacks(&server_cb_, false);
 
   service_ = server_->createService(kServiceFF60);
+  if (!service_) return false;
 
   // FF61: commands to the keyboard, responses from the keyboard.
   ff61_ = service_->createCharacteristic(
       kCharFF61,
       NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::WRITE |
           NIMBLE_PROPERTY::WRITE_NR | NIMBLE_PROPERTY::NOTIFY);
+  if (!ff61_) return false;
   ff61_->setCallbacks(&char_cb_);
 
   uint8_t zeros[kPacketSize] = {};
@@ -86,15 +86,10 @@ bool BLEViaTransport::begin(const char* deviceName, uint32_t fwVersion) {
   if (nameLen > 28) nameLen = 28;
   memcpy(&info[4], deviceName, nameLen);
   ff62_ = service_->createCharacteristic(kCharFF62, NIMBLE_PROPERTY::READ);
+  if (!ff62_) return false;
   ff62_->setValue(info, kPacketSize);
 
-  // NimBLE 2.x starts all services together with the server.
-  server_->start();
-
-  NimBLEAdvertising* adv = server_->getAdvertising();
-  adv->addServiceUUID(kServiceFF60);
-  adv->start();
-
+  activeTransport_ = this;
   return true;
 }
 

@@ -392,34 +392,34 @@ class StoredCustomValue : public via::CustomValue {
       : value(initialValue), saveCalls(0), validationCalls(0), loadCalls(0),
         changingSave_(changingSave), rejectState_(rejectState) {}
 
-  bool set(uint8_t[via::kPacketSize]) override { return true; }
-  bool get(uint8_t[via::kPacketSize]) override { return true; }
-  size_t stateSize() const override { return 1; }
-  bool saveState(uint8_t* state, size_t size) const override {
-    if (size != 1) return false;
-    ++saveCalls;
-    state[0] = changingSave_ ? saveCalls : value;
-    return true;
-  }
-  bool validateState(const uint8_t*, size_t size) const override {
-    ++validationCalls;
-    return size == 1 && !rejectState_;
-  }
-  bool loadState(const uint8_t* state, size_t size) override {
-    if (size != 1) return false;
-    ++loadCalls;
-    value = state[0];
-    return true;
-  }
+   bool set(uint8_t[via::kPacketSize]) override { return true; }
+   bool get(uint8_t[via::kPacketSize]) override { return true; }
+   size_t stateSize() const override { return 1; }
+   bool saveState(uint8_t* state, size_t size) const override {
+     if (size != 1) return false;
+     ++saveCalls;
+     state[0] = changingSave_ ? saveCalls : value;
+     return true;
+   }
+   bool validateState(const uint8_t*, size_t size) const override {
+     ++validationCalls;
+     return size == 1 && !rejectState_;
+   }
+   bool loadState(const uint8_t* state, size_t size) override {
+     if (size != 1) return false;
+     ++loadCalls;
+     value = state[0];
+     return true;
+   }
 
-  uint8_t value;
-  mutable uint8_t saveCalls;
-  mutable uint8_t validationCalls;
-  uint8_t loadCalls;
+   uint8_t value;
+   mutable uint8_t saveCalls;
+   mutable uint8_t validationCalls;
+   uint8_t loadCalls;
 
- private:
-  bool changingSave_;
-  bool rejectState_;
+  private:
+   bool changingSave_;
+   bool rejectState_;
 };
 
 class FailingSerializationCustomValue : public via::CustomValue {
@@ -937,7 +937,9 @@ void assertSuccessfulFactoryResetPublishesOnce() {
   const uint8_t clearedMacros[2] = {};
   assert(memcmp(macros, clearedMacros, sizeof(macros)) == 0);
   assert(keyboard.layoutOptions() == 0x30010203UL);
-  assert(customValue.value == 0);
+  // Without a reset() override the custom value has no distinct default, so
+  // a successful factory reset preserves the active value.
+  assert(customValue.value == 0xD1);
   assert(customValue.loadCalls == customLoads + 1);
   assert(!keyboard.dirty());
   assert(callbacks.layoutCalls == layoutCalls + 1);

@@ -6,6 +6,34 @@
 - nRF52840 (nice!nano v2) platform adapters: Bluefruit BLE HID, AirVIA GATT transport, InternalFS (LittleFS) storage.
 - `nice_nano_v2_VIA_BLE` example sketch and VIA JSON definition.
 - Native tests and compile gates for nRF52 adapters.
+- Generic ESP32 (WROOM-32/WROOM-32E) platform adapters: GPIO matrix IO,
+  NVS shadow-blob storage, NimBLE 2.x BLE HID keyboard adapter, and AirVIA
+  BLE GATT VIA transport (128-bit AirVIA UUIDs, 32-byte packets).
+- `ESP32_WROOM32_VIA_BLE` example sketch: BLE-only wireless keyboard
+  (5x6x3 matrix, rotary encoder) for ESP32-WROOM-32, which has no native
+  USB.
+- CI `esp32-adapters` job: native builds of the ESP32 adapter tests with
+  `-Wall -Wextra -Werror` (ASan/UBSan for the BLE transport) plus
+  arduino-cli compilation of the WROOM-32 reference sketch.
+
+### Changed
+- The AirVIA BLE transport for ESP32 targets the NimBLE-Arduino 2.x API:
+  characteristic callbacks receive `NimBLEConnInfo`, and subscription state
+  is tracked through `onSubscribe()` (NimBLE 1.x had no getter for it).
+- ESP32 BLE HID adapters (`via::esp32` and `via::esp32s3`) now publish a
+  standard 8-byte boot-keyboard report map; with report ID 1 the GATT notify
+  payload is 9 bytes: `[reportId, modifiers, reserved, keys[0..5]]`.
+- `via::esp32s3::BLEViaTransport` is now an alias for the generic
+  `via::esp32::BLEViaTransport` implementation, so the S3 dual-mode sketch
+  shares the NimBLE-Arduino 2.x AirVIA transport.
+- `.gitignore` now excludes stray object files.
+
+### Fixed
+- Protocol test expectation updated for the 0.3.x factory-reset semantics:
+  without a `CustomValue::reset()` override a successful factory reset
+  preserves the active custom value (no distinct default exists to restore).
+- ESP32 BLE HID `send()` no longer truncates the 6th keycode or drops the
+  reserved report byte.
 
 ## 0.4.0-experimental — 2026-08-02
 

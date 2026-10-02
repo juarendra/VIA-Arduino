@@ -11,6 +11,9 @@ build/
 *_test
 *_test_san
 
+# Stray object files
+*.o
+
 # Artifacts
 artifacts/
 

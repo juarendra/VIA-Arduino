@@ -1,6 +1,6 @@
 #pragma once
 
-#if defined(ARDUINO_ARCH_ESP32) && defined(CONFIG_IDF_TARGET_ESP32S3)
+#if defined(ARDUINO_ARCH_ESP32)
 
 #include "VIA_Keyboard.h"
 
@@ -12,7 +12,7 @@
 #include <NimBLEService.h>
 
 namespace via {
-namespace esp32s3 {
+namespace esp32 {
 
 namespace {
 
@@ -51,15 +51,16 @@ const uint8_t kReportId = 1;
 
 }  // namespace
 
-/* NimBLE HID keyboard report adapter for ESP32-S3 boards.
+/* NimBLE HID keyboard report adapter for generic ESP32 boards, including
+ * ESP32-WROOM-32 which has no native USB.
  *
  * Hosts a standard 6-key rollover keyboard report map (report ID 1) on a
  * shared NimBLE server supplied by the sketch and publishes reports through
  * the 0x2A4D input report characteristic. The sketch owns NimBLEDevice::init,
  * createServer, server start, and advertising; begin() only attaches the HID
  * service and must run before the server is started so the GATT database is
- * complete. The NimBLEHIDDevice lives for the device lifetime (never torn
- * down). */
+ * complete. The NimBLEHIDDevice lives for the device lifetime (ESP32 is
+ * power-reset, never torn down). */
 class BleKeyboardHID : public via::KeyboardHID {
   public:
   BleKeyboardHID() = default;
@@ -110,7 +111,7 @@ class BleKeyboardHID : public via::KeyboardHID {
   NimBLECharacteristic* inputReport_ = nullptr;
 };
 
-}  // namespace esp32s3
+}  // namespace esp32
 }  // namespace via
 
-#endif  // ARDUINO_ARCH_ESP32 && CONFIG_IDF_TARGET_ESP32S3
+#endif  // ARDUINO_ARCH_ESP32

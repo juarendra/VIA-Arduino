@@ -41,8 +41,13 @@ class NimBLEHIDDevice {
       (void)country;
       (void)flags;
     }
+    bool setBatteryLevel(uint8_t level) {
+      (void)level;
+      return true;
+    }
 
     NimBLECharacteristic* getInputReport(uint8_t reportId);
+    NimBLEService* getHidService() { return hidService_; }
 
   private:
     friend struct FakeNimBLE;

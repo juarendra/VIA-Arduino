@@ -47,7 +47,8 @@ void test_hid_begin_attaches_shared_service() {
     NimBLECharacteristic* inputReport = Nimble.findChar("0x2A4D");
     assert(inputReport != nullptr);
     assert(Nimble.serviceForChar(inputReport) == hidService);
-    assert(inputReport->getProperties() == NIMBLE_PROPERTY::NOTIFY);
+    assert(inputReport->getProperties() ==
+           (NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY));
 }
 
 void test_hid_unconnected_rejects() {

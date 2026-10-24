@@ -1625,7 +1625,56 @@ void assertCustomResponseCannotTriggerBootloader() {
   assert(callbacks.bootloaderCalls == 0);
 }
 
+void assertInvalidKeycodeReadReturnsError() {
+  uint16_t keymap[1] = {0x1234};
+  const uint16_t defaults[1] = {0x1234};
+  via::MemoryTransport transport;
+  via::Config config = {1, 1, 1, keymap, defaults};
+  via::Protocol keyboard(config, transport);
+  assert(keyboard.begin(0));
+
+  const uint8_t requests[4][via::kPacketSize] = {
+      {0x04, 1, 0, 0},
+      {0x04, 0, 1, 0},
+      {0x04, 0, 0, 1},
+      {0x04, 1, 1, 1}};
+  for (const auto& request : requests) {
+    uint8_t packet[via::kPacketSize];
+    memcpy(packet, request, sizeof(packet));
+    assert(!keyboard.process(packet, 0));
+    assert(packet[0] == 0xFF);
+    assert(!keyboard.dirty());
+  }
+}
+
 }  // namespace
+
+void testExplicitSaveWithoutCustomValue() {
+  struct CountingStorage : public via::Storage {
+    size_t capacity() const override { return sizeof(bytes); }
+    bool read(size_t, uint8_t*, size_t) override { return false; }
+    bool write(size_t, const uint8_t*, size_t) override { return true; }
+    bool commit() override { ++commits; return true; }
+    bool erase() override { return true; }
+    uint8_t bytes[24];
+    uint8_t commits = 0;
+  };
+  uint16_t keymap[1] = {};
+  const uint16_t defaults[1] = {};
+  uint8_t loadBuffer[16] = {};
+  CountingStorage storage;
+  via::Config config = {1, 1, 1, keymap, defaults, nullptr, 0, 0, 1, 0, 0, 0,
+                        nullptr, nullptr, loadBuffer, sizeof(loadBuffer)};
+  via::MemoryTransport transport;
+  via::Protocol keyboard(config, transport, &storage);
+  assert(keyboard.begin(0));
+  assert(keyboard.setKeycode(0, 0, 0, 0x42));
+  uint8_t packet[via::kPacketSize] = {};
+  packet[0] = 0x09;
+  assert(keyboard.process(packet, 0));
+  assert(packet[0] == 0x09);
+  assert(storage.commits == 1);
+}
 
 int main() {
   const uint8_t expected8[] = {0x12};
@@ -1812,5 +1861,7 @@ int main() {
   const uint8_t clearedMacros[sizeof(restoredMacros)] = {};
   assert(memcmp(restoredMacros, clearedMacros, sizeof(restoredMacros)) == 0);
   assert(restoredKeyboard.keycode(0, 0, 0) == 0x5678);
+  testExplicitSaveWithoutCustomValue();
+  assertInvalidKeycodeReadReturnsError();
   return 0;
 }

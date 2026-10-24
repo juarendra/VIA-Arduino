@@ -74,9 +74,23 @@ class BleKeyboardHID : public via::KeyboardHID {
     hid_ = new NimBLEHIDDevice(server_);
     if (!hid_) return false;
     hid_->setManufacturer(manufacturer);
+    hid_->setPnp(0x00, 0x0001, 0x0001, 0x0111);
+    hid_->setHidInfo(0x00, 0x00);
+    hid_->setBatteryLevel(100);
     hid_->setReportMap(const_cast<uint8_t*>(kReportMap), sizeof(kReportMap));
-    inputReport_ = hid_->getInputReport(kReportId);
-    return inputReport_ != nullptr;
+    NimBLEService* hidSvc = hid_->getHidService();
+    if (!hidSvc) return false;
+    inputReport_ = hidSvc->createCharacteristic(
+        NimBLEUUID((uint16_t)0x2A4D),
+        NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY);
+    if (!inputReport_) return false;
+    NimBLEDescriptor* reportRef = inputReport_->createDescriptor(
+        NimBLEUUID((uint16_t)0x2908), NIMBLE_PROPERTY::READ);
+    if (reportRef) {
+      uint8_t v[2] = {kReportId, 0x01};
+      reportRef->setValue(v, sizeof(v));
+    }
+    return true;
   }
 
   bool configured() const override { return connected(); }

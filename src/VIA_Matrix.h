@@ -39,7 +39,14 @@ class Matrix {
     for (uint8_t r = 0; r < config_.rows; ++r) prevRaw_[r] = 0;
   }
 
-  bool begin() { return !(config_.rows == 0 || config_.columns == 0); }
+  bool begin() {
+    if (config_.rows == 0 || config_.columns == 0) return false;
+    if (config_.direction == kColToRow) {
+      for (uint8_t c = 0; c < config_.columns; ++c)
+        io_.inputPullup(config_.columnPins[c]);
+    }
+    return true;
+  }
 
   void task(uint32_t ms);
 

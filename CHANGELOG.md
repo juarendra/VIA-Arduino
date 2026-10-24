@@ -27,6 +27,9 @@
   `via::esp32::BLEViaTransport` implementation, so the S3 dual-mode sketch
   shares the NimBLE-Arduino 2.x AirVIA transport.
 - `.gitignore` now excludes stray object files.
+- ESP32 WROOM reference setup initializes `kColToRow` matrix column pull-ups and reports startup failures over serial.
+- VIA protocol rejects out-of-range keycode reads and permits persistence commits without a custom-value handler.
+- ESP32 BLE HID input reports expose readable report metadata alongside notifications.
 
 ### Fixed
 - Protocol test expectation updated for the 0.3.x factory-reset semantics:

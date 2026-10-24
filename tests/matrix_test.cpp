@@ -69,6 +69,7 @@ int main() {
                                  rawRows, candidate, stable, changed};
     via::Matrix scanMatrix(scanCfg, scanIO);
     assert(scanMatrix.begin());
+    assert(scanIO.inputPullupCalls == 3);
     scanMatrix.task(0);
     assert(scanMatrix.rawRow(0) == 0x01);
   }
@@ -87,8 +88,10 @@ int main() {
                               rawRows, candidate, stable, changed};
     via::Matrix matrix2(cfg2, io2);
     assert(matrix2.begin());
+    assert(io2.inputPullupCalls == 0);
     matrix2.task(0);
     assert(matrix2.rawRow(0) == (1U << 2));
+    assert(io2.inputPullupCalls == 2);
   }
 
   // DEBOUNCE: zero debounce publishes immediately

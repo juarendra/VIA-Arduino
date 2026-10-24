@@ -160,6 +160,11 @@ bool Protocol::process(uint8_t packet[kPacketSize], uint32_t nowMs) {
       }
       break;
     case 0x04: {  // dynamic keymap get keycode
+      if (packet[1] >= config_.layers || packet[2] >= config_.rows ||
+          packet[3] >= config_.columns) {
+        packet[0] = 0xFF;
+        break;
+      }
       const uint16_t code = keycode(packet[1], packet[2], packet[3]);
       packet[4] = static_cast<uint8_t>(code >> 8);
       packet[5] = static_cast<uint8_t>(code);
@@ -189,7 +194,7 @@ bool Protocol::process(uint8_t packet[kPacketSize], uint32_t nowMs) {
       if (!customValue_ || !customValue_->get(packet)) packet[0] = 0xFF;
       break;
     case 0x09:  // EEPROM reset / commit
-      if (!customValue_ || !customValue_->save(packet) || !save()) packet[0] = 0xFF;
+      if ((customValue_ && !customValue_->save(packet)) || !save()) packet[0] = 0xFF;
       break;
     case 0x0A:  // reset EEPROM
       if (!config_.eepromResetEnabled || !factoryReset()) packet[0] = 0xFF;

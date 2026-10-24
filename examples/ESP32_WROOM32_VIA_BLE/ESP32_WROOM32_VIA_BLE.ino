@@ -26,6 +26,7 @@
 #include <VIA_ESP32_BLE.h>
 #include <VIA_ESP32_BLE_ViaTransport.h>
 
+
 // --- Matrix: 5 rows x 6 cols ---
 static const via::Pin rowPins[5] = {4, 5, 12, 13, 14};
 static const via::Pin colPins[6] = {15, 16, 17, 18, 21, 22};
@@ -145,22 +146,75 @@ via::Keyboard keyboard({ROWS, COLS}, matrix, protocol, bleHid,
                        activeCodes, &keyboardCallbacks);
 
 void setup() {
-    if (!nvs.begin()) return;
+    Serial.begin(115200);
+    delay(200);
+    Serial.println(F("[VIA] boot"));
+    if (!matrix.begin()) {
+      Serial.println(F("[VIA] FAIL matrix.begin"));
+      return;
+    }
+    if (!nvs.begin()) {
+      Serial.println(F("[VIA] FAIL nvs.begin"));
+      return;
+    }
+    Serial.printf("[VIA] nvs capacity=%u\r\n", (unsigned)nvs.capacity());
     NimBLEDevice::init("AirVIA WROOM32");
+    NimBLEDevice::setDeviceName("AirVIA WROOM32");
+    NimBLEDevice::setOwnAddrType(BLE_OWN_ADDR_RANDOM);
+    NimBLEDevice::setOwnAddr(NimBLEAddress("D4:3D:7E:12:35:54", BLE_ADDR_RANDOM));
+    Serial.printf("[VIA] own addr=%s\r\n", NimBLEDevice::getAddress().toString().c_str());
+    Serial.println(F("[VIA] nimble init"));
     NimBLEServer* server = NimBLEDevice::createServer();
-    if (!server) return;
-    if (!bleHid.begin(server, "AirVIA WROOM32", "AirVIA")) return;
-    if (!bleVia.begin(server, "AirVIA WROOM32", 0x00000001)) return;
-    server->start();
+    if (!server) {
+      Serial.println(F("[VIA] FAIL createServer"));
+      return;
+    }
+    Serial.println(F("[VIA] shared server created"));
+    if (!bleHid.begin(server, "AirVIA WROOM32", "AirVIA")) {
+      Serial.println(F("[VIA] FAIL hid.begin"));
+      return;
+    }
+    Serial.println(F("[VIA] hid service initialized"));
+    if (!bleVia.begin(server, "AirVIA WROOM32", 0x00000001)) {
+      Serial.println(F("[VIA] FAIL via.begin"));
+      return;
+    }
+    Serial.println(F("[VIA] ff60/ff61/ff62 service initialized"));
+    server->advertiseOnDisconnect(true);
+    bool started = server->start();
+    Serial.printf("[VIA] server started=%d\r\n", started ? 1 : 0);
+    uint16_t hidHandle = 0, viaHandle = 0;
+    int hidRc = ble_gatts_find_svc(NimBLEUUID((uint16_t)0x1812).getBase(), &hidHandle);
+    int viaRc = ble_gatts_find_svc(NimBLEUUID("0000FF60-0000-1000-8000-00805F9B34FB").getBase(), &viaHandle);
+    Serial.printf("[VIA] gatts find hid rc=%d handle=%u via rc=%d handle=%u\r\n", hidRc, hidHandle, viaRc, viaHandle);
+    Serial.printf("[VIA] hid service=%p started=%d via service=%p started=%d\r\n",
+                  (void*)server->getServiceByUUID(NimBLEUUID((uint16_t)0x1812)),
+                  server->getServiceByUUID(NimBLEUUID((uint16_t)0x1812))->isStarted(),
+                  (void*)server->getServiceByUUID(NimBLEUUID("0000FF60-0000-1000-8000-00805F9B34FB")),
+                  server->getServiceByUUID(NimBLEUUID("0000FF60-0000-1000-8000-00805F9B34FB"))->isStarted());
     NimBLEAdvertising* adv = server->getAdvertising();
-    if (!adv) return;
-    adv->addServiceUUID(NimBLEUUID("0x1812"));
+    if (!adv) {
+      Serial.println(F("[VIA] FAIL getAdvertising"));
+      return;
+    }
+    adv->addServiceUUID(NimBLEUUID((uint16_t)0x1812));
     adv->addServiceUUID(NimBLEUUID(
         "0000FF60-0000-1000-8000-00805F9B34FB"));
+    adv->enableScanResponse(false);
     adv->setName("AirVIA WROOM32");
     adv->start();
-    if (!protocol.begin(millis())) return;
-    if (!keyboard.begin()) return;
+    Serial.println(F("[VIA] advertising started"));
+    if (!protocol.begin(millis())) {
+      Serial.println(F("[VIA] FAIL protocol.begin"));
+      return;
+    }
+    Serial.println(F("[VIA] protocol begin success"));
+    if (!keyboard.begin()) {
+      Serial.println(F("[VIA] FAIL keyboard.begin"));
+      return;
+    }
+    Serial.println(F("[VIA] keyboard begin success"));
+    Serial.println(F("[VIA] ready"));
 
     pinMode(kEncoderClockPin, INPUT_PULLUP);
     pinMode(kEncoderDetentPin, INPUT_PULLUP);

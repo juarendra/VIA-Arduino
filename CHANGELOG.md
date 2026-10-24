@@ -37,6 +37,7 @@
   preserves the active custom value (no distinct default exists to restore).
 - ESP32 BLE HID `send()` no longer truncates the 6th keycode or drops the
   reserved report byte.
+- ESP32 BLE HID now uses the NimBLE input-report factory so the HID GATT service and report characteristic are registered.
 
 ## 0.4.0-experimental — 2026-08-02
 

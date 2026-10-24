@@ -3,10 +3,6 @@
 
 class NimBLEService;
 
-class NimBLEDescriptor {
-  public:
-    bool setValue(const uint8_t*, size_t) { return true; }
-};
 
 class NimBLECharacteristic : public NimBLEAttValue {
   public:
@@ -26,10 +22,6 @@ class NimBLECharacteristic : public NimBLEAttValue {
     const NimBLEUUID& uuid() const { return uuid_; }
     bool active() const { return active_; }
     NimBLEService* service() const { return service_; }
-    NimBLEDescriptor* createDescriptor(const NimBLEUUID&,
-                                       uint32_t = 0) {
-      return &descriptor_;
-    }
 
   private:
     friend class NimBLEService;
@@ -43,5 +35,4 @@ class NimBLECharacteristic : public NimBLEAttValue {
     NimBLEService* service_ = nullptr;
     NimBLECharacteristicCallbacks* callbacks_ = nullptr;
     bool active_ = false;
-    NimBLEDescriptor descriptor_;
 };

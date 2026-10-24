@@ -26,12 +26,6 @@ class NimBLEUUID {
   public:
     NimBLEUUID() {}
     explicit NimBLEUUID(const char* str) : str_(str ? str : "") {}
-    explicit NimBLEUUID(uint16_t uuid) : str_("0x") {
-      static const char kHex[] = "0123456789ABCDEF";
-      for (int i = 12; i >= 0; i -= 4) {
-        str_.push_back(kHex[(uuid >> i) & 0xF]);
-      }
-    }
     bool operator==(const NimBLEUUID& other) const { return str_ == other.str_; }
     bool operator!=(const NimBLEUUID& other) const { return !(*this == other); }
     const std::string& str() const { return str_; }

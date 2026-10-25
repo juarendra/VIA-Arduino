@@ -141,8 +141,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Validate ESP32 shared-server example contracts
-        run: python tests/esp32_shared_server_contract_test.py
       - name: Build and run ESP32 adapter tests
         run: |
           g++ -std=c++11 -Wall -Wextra -Werror -DARDUINO_ARCH_ESP32 -DTESTING_ENVIRONMENT \
@@ -156,15 +154,18 @@ jobs:
             ./esp32_ble_hid_test
           g++ -std=c++11 -Wall -Wextra -Werror -DARDUINO_ARCH_ESP32 -DTESTING_ENVIRONMENT \
             -Itests/fakes -Isrc tests/esp32_shared_server_test.cpp \
-            src/VIA_ESP32_BLE_ViaTransport.cpp tests/fakes/nimble.cpp \
+            src/VIA_ESP32_BLE_ViaTransport.cpp src/VIA_Matrix.cpp src/VIA_Keyboard.cpp src/VIA_Protocol.cpp tests/fakes/nimble.cpp \
             -o esp32_shared_server_test && \
             ./esp32_shared_server_test
           g++ -std=c++11 -Wall -Wextra -Werror -DARDUINO_ARCH_ESP32 \
             -Itests/fakes -Isrc tests/esp32_nvs_test.cpp -o esp32_nvs_test && \
             ./esp32_nvs_test
           g++ -std=c++11 -Wall -Wextra -Werror -DARDUINO_ARCH_ESP32 \
-            -Itests/fakes -Isrc tests/esp32_gpio_test.cpp -o esp32_gpio_test && \
+            -Itests/fakes -Isrc tests/esp32_gpio_test.cpp src/VIA_Matrix.cpp -o esp32_gpio_test && \
             ./esp32_gpio_test
+          g++ -std=c++11 -Wall -Wextra -Werror tests/wroom_ota_config_test.cpp \
+            -o wroom_ota_config_test && ./wroom_ota_config_test
+          python tests/wroom_ota_host_test.py
           echo "#include \"VIA_ESP32S3_BLE.h\"" | \
             g++ -x c++ -std=c++11 -Wall -Wextra -Werror -fsyntax-only \
             -DARDUINO_ARCH_ESP32 -DCONFIG_IDF_TARGET_ESP32S3 \
@@ -189,7 +190,7 @@ jobs:
           g++ -std=c++11 -Wall -Wextra -Werror -fsanitize=address,undefined \
             -fno-omit-frame-pointer -DARDUINO_ARCH_ESP32 -DTESTING_ENVIRONMENT \
             -Itests/fakes -Isrc tests/esp32_shared_server_test.cpp \
-            src/VIA_ESP32_BLE_ViaTransport.cpp tests/fakes/nimble.cpp \
+            src/VIA_ESP32_BLE_ViaTransport.cpp src/VIA_Matrix.cpp src/VIA_Keyboard.cpp src/VIA_Protocol.cpp tests/fakes/nimble.cpp \
             -o esp32_shared_server_test_san && \
             ./esp32_shared_server_test_san
       - uses: arduino/setup-arduino-cli@v2

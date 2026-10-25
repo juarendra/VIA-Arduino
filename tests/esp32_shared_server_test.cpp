@@ -5,6 +5,8 @@
 
 #include "VIA_ESP32_BLE.h"
 #include "VIA_ESP32_BLE_ViaTransport.h"
+#include "VIA_ESP32_GPIO.h"
+#include "VIA_Protocol.h"
 #include "fakes/NimBLEFake.h"
 
 // Fake FreeRTOS mutex control (declared in the transport header).
@@ -67,10 +69,8 @@ void test_wroom_shared_server_full_flow() {
   report.keys[0] = 0x04;
   assert(hid.send(report));
   assert(Nimble.notifyCount == 1);
-  assert(Nimble.lastNotified.size() == 9);
-  assert(Nimble.lastNotified[0] == 1);
-  assert(Nimble.lastNotified[1] == 0x01);
-  assert(Nimble.lastNotified[3] == 0x04);
+  assert(Nimble.lastNotified ==
+         std::vector<uint8_t>({0x01, 0x00, 0x04, 0, 0, 0, 0, 0}));
 
   // AirVIA request/response over the same shared connection.
   Nimble.dispatchSubscribe(0x01);
@@ -97,8 +97,51 @@ void test_wroom_shared_server_full_flow() {
   assert(!transport.receive(received));
 }
 
+void test_gpio_press_release_reaches_hid() {
+  Nimble.reset();
+  NimBLEDevice::init("AirVIA WROOM32");
+  NimBLEServer* server = NimBLEDevice::createServer();
+  via::esp32::BleKeyboardHID hid;
+  via::esp32::BLEViaTransport transport;
+  assert(hid.begin(server, "AirVIA WROOM32", "AirVIA"));
+  assert(transport.begin(server, "AirVIA WROOM32", 1));
+  server->start();
+  Nimble.connect();
+
+  const via::Pin rows[] = {4}, columns[] = {16};
+  uint32_t raw[1] = {}, candidate[1] = {}, stable[1] = {}, changed[1] = {};
+  via::esp32::MatrixIOArduino io;
+  via::MatrixConfig matrixConfig = {1, 1, rows, columns, via::kColToRow, 30, 5,
+                                    raw, candidate, stable, changed};
+  via::Matrix matrix(matrixConfig, io);
+  uint16_t keymap[1] = {}, activeCodes[1] = {};
+  const uint16_t defaults[] = {0x001A};  // W
+  via::Config config(1, 1, 1, keymap, defaults);
+  via::Protocol protocol(config, transport);
+  via::Keyboard keyboard({1, 1}, matrix, protocol, hid, activeCodes);
+  assert(matrix.begin() && protocol.begin() && keyboard.begin());
+
+  FakeArduino::value[16] = HIGH;
+  matrix.task(0); keyboard.task(0);
+  matrix.task(5); keyboard.task(5);
+  assert(Nimble.notifyCount == 0);  // An open input must not type.
+
+  FakeArduino::value[16] = LOW;
+  matrix.task(10); keyboard.task(10);
+  matrix.task(15); keyboard.task(15);
+  assert(Nimble.lastNotified ==
+         std::vector<uint8_t>({0, 0, 0x1A, 0, 0, 0, 0, 0}));
+
+  FakeArduino::value[16] = HIGH;
+  matrix.task(20); keyboard.task(20);
+  matrix.task(25); keyboard.task(25);
+  assert(Nimble.lastNotified == std::vector<uint8_t>(8, 0));
+  assert(Nimble.notifyCount == 2);
+}
+
 int main() {
   test_wroom_shared_server_full_flow();
+  test_gpio_press_release_reaches_hid();
   std::cout << "All tests passed!" << std::endl;
   return 0;
 }

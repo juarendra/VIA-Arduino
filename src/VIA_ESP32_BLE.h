@@ -18,16 +18,16 @@ namespace {
 
 // Standard 8-byte keyboard report (byte 0 = 8 modifier bits, byte 1 = 8
 // reserved bits, bytes 2-7 = six 8-bit keycodes), matching
-// via::KeyboardReport {modifiers, reserved, keys[6]}. Report ID 1, so the
-// notify payload is [id, modifiers, reserved, keys[0..5]] (9 bytes).
+// via::KeyboardReport {modifiers, reserved, keys[6]}. Report ID 1 is carried
+// by the GATT Report Reference descriptor, not the notification payload.
 const uint8_t kReportMap[] = {
     0x05, 0x01,  // Usage Page (Generic Desktop)
     0x09, 0x06,  // Usage (Keyboard)
     0xA1, 0x01,  // Collection (Application)
     0x85, 0x01,  // Report ID (1)
     0x05, 0x07,  // Usage Page (Key Codes)
-    0x19, 0xE2,  // Usage Minimum (0xE2)
-    0x29, 0xFD,  // Usage Maximum (0xFD)
+    0x19, 0xE0,  // Usage Minimum (Left Control)
+    0x29, 0xE7,  // Usage Maximum (Right GUI)
     0x15, 0x00,  // Logical Minimum (0)
     0x25, 0x01,  // Logical Maximum (1)
     0x75, 0x01,  // Report Size (1)
@@ -86,11 +86,10 @@ class BleKeyboardHID : public via::KeyboardHID {
 
   bool send(const via::KeyboardReport& r) override {
     if (!connected() || !inputReport_) return false;
-    uint8_t buf[9];
-    buf[0] = kReportId;
-    buf[1] = r.modifiers;
-    buf[2] = r.reserved;
-    for (int i = 0; i < 6; ++i) buf[3 + i] = r.keys[i];
+    uint8_t buf[8];
+    buf[0] = r.modifiers;
+    buf[1] = r.reserved;
+    for (int i = 0; i < 6; ++i) buf[2 + i] = r.keys[i];
     return inputReport_->notify(buf, sizeof(buf));
   }
 

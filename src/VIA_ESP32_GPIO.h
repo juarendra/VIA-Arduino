@@ -18,7 +18,7 @@ class MatrixIOArduino : public via::MatrixIO {
     digitalWrite(pin, LOW);
   }
   void release(Pin pin) override { pinMode(pin, INPUT_PULLUP); }
-  bool read(Pin pin) override { return digitalRead(pin) != HIGH; }
+  bool read(Pin pin) override { return digitalRead(pin) == HIGH; }
   void delayMicroseconds(uint16_t us) override { ::delayMicroseconds(us); }
 };
 

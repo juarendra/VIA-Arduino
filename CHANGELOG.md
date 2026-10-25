@@ -20,9 +20,9 @@
 - The AirVIA BLE transport for ESP32 targets the NimBLE-Arduino 2.x API:
   characteristic callbacks receive `NimBLEConnInfo`, and subscription state
   is tracked through `onSubscribe()` (NimBLE 1.x had no getter for it).
-- ESP32 BLE HID adapters (`via::esp32` and `via::esp32s3`) now publish a
-  standard 8-byte boot-keyboard report map; with report ID 1 the GATT notify
-  payload is 9 bytes: `[reportId, modifiers, reserved, keys[0..5]]`.
+- ESP32 BLE adapters publish a standard 8-byte keyboard report map.
+  The generic `via::esp32` GATT notification carries only the 8 report
+  bytes; report ID 1 is supplied by the Report Reference descriptor.
 - `via::esp32s3::BLEViaTransport` is now an alias for the generic
   `via::esp32::BLEViaTransport` implementation, so the S3 dual-mode sketch
   shares the NimBLE-Arduino 2.x AirVIA transport.
@@ -38,6 +38,67 @@
 - ESP32 BLE HID `send()` no longer truncates the 6th keycode or drops the
   reserved report byte.
 - ESP32 BLE HID now uses the NimBLE input-report factory so the HID GATT service and report characteristic are registered.
+- WROOM keyboard bench corrections in `src/VIA_ESP32_GPIO.h`,
+  `src/VIA_ESP32_BLE.h` and
+  `examples/ESP32_WROOM32_VIA_BLE/ESP32_WROOM32_VIA_BLE.ino`:
+  return electrical GPIO level instead of double-inverting active-low
+  inputs; send 8-byte HOGP reports; describe modifiers E0..E7; correct
+  basic keycode defaults and guard the loop after initialization failure.
+  Rows are now `{4,19,23,13,14}`, columns `{27,16,17,18,21,22}`;
+  classic ESP32 strapping GPIO0/2/5/12/15 are unused. Existing NVS keymaps
+  remain unchanged; BLE uses the board identity and bonding.
+  Evidence: failing-before/passing-after polarity and framing regressions;
+  gpio, hid, shared-server, keyboard and protocol native suites exit 0;
+  shared path ASan/UBSan exit 0; WROOM compile 624135 bytes/39660 RAM;
+  COM39 flash hashes verified and serial ready/HID1812+FF60 observed.
+  Basic host keypress/remap is user-confirmed below. Impact: rewire old
+  GPIO5/12/15 connections and re-pair after descriptor/identity changes.
+  Rollback: USB-flash a known artifact with matching wiring; `58c8671`
+  still has the old polarity/framing defects and is not a production fix.
+  Runtime shared-server coverage replaces
+  `tests/esp32_shared_server_contract_test.py` source-text assertions;
+  native test link commands in `.github/workflows/ci.yml` include the
+  matrix/keyboard/protocol path.
+
+### WROOM Wi-Fi OTA
+- Add authenticated ArduinoOTA to
+  `examples/ESP32_WROOM32_VIA_BLE/WroomOTA.h` with bounded configuration
+  parsing in `WroomOtaConfig.h` and service calls in the WROOM sketch.
+  Wi-Fi connects/reconnects without blocking the keyboard scan loop.
+  Serial provisioning saves one validated `airvia-ota/config` NVS blob;
+  source and logs contain no provisioned credentials. OTA remains available
+  even if keyboard initialization fails; held keys are released at upload start.
+- Add `extras/wroom_ota.py`: hidden interactive Wi-Fi provisioning or
+  non-echoed stdin automation, a separate generated OTA credential in
+  Windows Credential Manager, serial status and IP-only firmware upload.
+  The ESP32 core's uploader runs in-process, keeping authentication out of
+  process arguments. `docs/PORTING.md` documents commands and recovery.
+- Evidence: parser boundaries passed ASan/UBSan, three host validation
+  tests passed, Windows Credential Manager store/read/delete smoke passed;
+  combined build 1226171 bytes (93%), RAM64756 (19%); bootstrap COM39 flash
+  completed with all hashes verified. Real network smoke (2026-10-25):
+  IOTech1/IP192.168.1.103, wrong password rejected, authenticated upload
+  exit0/OTA_UPLOAD_OK in54.90s, reboot app0->app1 with matching image MD5,
+  post-OTA VIA13 and saved keymap readback passed. See
+  `docs/testing/esp32-wroom-2026-10-20.md`; this same-image smoke does not
+  certify firmware-schema migration or power-loss rollback.
+- Impact: subsequent application `.bin` uploads can use the device IP;
+  preserve OTA support and the dual-app partition layout. OTA does not
+  erase keyboard NVS. Rollback/recovery remains USB flashing a compatible
+  image without erase-all. Digest authentication is trusted-LAN tooling,
+  not encrypted transport, signed firmware or production certification.
+
+### WROOM hardware acceptance — 2026-10-25
+- User confirmed that changing the VIA keymap and pressing physical keys
+  works on the current ESP32-WROOM fixture. Record this as manual
+  user-reported PASS, not an automated per-device key-down/key-up capture.
+  `docs/testing/esp32-wroom-2026-10-20.md` distinguishes this result from
+  the earlier automated UI remap/save/reconnect/restore and OTA evidence.
+- Basic remap/physical-key smoke is accepted; exact tested positions,
+  counts and release timing were not reported. Full-matrix, modifier,
+  rollover, encoder, power-loss, soak and production gates remain open.
+  This confirmation does not change firmware behavior or reset NVS;
+  rollback/recovery instructions remain in `docs/PORTING.md`.
 
 ## 0.4.0-experimental — 2026-08-02
 

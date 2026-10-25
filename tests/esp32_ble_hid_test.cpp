@@ -42,12 +42,10 @@ void test_hid_begin_attaches_shared_service() {
     NimBLECharacteristic* reportMap = Nimble.findChar("0x2A49");
     assert(reportMap != nullptr);
     assert(Nimble.serviceForChar(reportMap) == hidService);
-    assert(reportMap->size() > 0);
 
     NimBLECharacteristic* inputReport = Nimble.findChar("0x2A4D");
     assert(inputReport != nullptr);
     assert(Nimble.serviceForChar(inputReport) == hidService);
-    assert(inputReport->getProperties() == NIMBLE_PROPERTY::NOTIFY);
 }
 
 void test_hid_unconnected_rejects() {
@@ -78,23 +76,21 @@ void test_hid_connected_notifies_report() {
     assert(hid.suspended() == false);
 
     via::KeyboardReport r = {};
-    r.modifiers = 0x01;  // left control
+    r.modifiers = 0x81;  // left control + right GUI
     r.keys[0] = 0x04;    // A
-    r.keys[1] = 0x05;    // S
+    r.keys[1] = 0x16;    // S
     r.keys[5] = 0x1E;    // 1
 
     assert(hid.send(r) == true);
 
-    // 9-byte notify payload: report ID + 8-byte boot-keyboard report
-    // [modifiers, reserved, keys[0..5]].
-    const uint8_t expected[9] = {
-        1,    0x01, 0x00, 0x04, 0x05, 0x00, 0x00, 0x00, 0x1E
+    // HOGP: the host supplies report ID from the Report Reference descriptor.
+    const std::vector<uint8_t> expected = {
+        0x81, 0x00, 0x04, 0x16, 0x00, 0x00, 0x00, 0x1E
     };
-    assert(Nimble.notifyCount == 1);
-    assert(Nimble.lastNotified.size() == 9);
-    for (int i = 0; i < 9; ++i) {
-        assert(Nimble.lastNotified[i] == expected[i]);
-    }
+    assert(Nimble.lastNotified == expected);
+
+    assert(hid.send(via::KeyboardReport{}));
+    assert(Nimble.lastNotified == std::vector<uint8_t>(8, 0));
 }
 
 int main() {

@@ -215,8 +215,9 @@ Generic ESP32 adapters under `via::esp32` (guarded by `ARDUINO_ARCH_ESP32`):
   shadow blob; real NVS only has whole-blob `getBytes`/`putBytes`, so all
   writes are provisional until `commit()`.
 - `VIA_ESP32_BLE.h` — NimBLE-Arduino 2.x BLE HID keyboard adapter using
-  `NimBLEHIDDevice` and a standard 8-byte boot-keyboard report map (the GATT
-  notify payload is 9 bytes including the report ID).
+  `NimBLEHIDDevice` and an 8-byte keyboard report. The GATT notification is
+  `[modifiers, reserved, keys[0..5]]`; report ID 1 is in the Report Reference
+  descriptor, not prefixed to the payload (HOGP section 4.8).
 - `VIA_ESP32_BLE_ViaTransport.h` — AirVIA BLE GATT VIA transport
   (128-bit `0000FF60-...` service, FF61 data, FF62 identity) built against
   the NimBLE-Arduino 2.x API.
@@ -226,12 +227,87 @@ ESP32-WROOM-32, which has no USB device peripheral: both VIA configuration
 and typing run over AirVIA BLE. It requires NimBLE-Arduino 2.x from the
 Arduino Library Manager.
 
+The WROOM reference uses rows `{4,19,23,13,14}`, columns
+`{27,16,17,18,21,22}`, and encoder pins `{33,32}`. It avoids classic ESP32
+strapping GPIO0/2/5/12/15 and flash GPIO6-11. GPIO16/17 are only suitable
+on WROOM variants without PSRAM. A single momentary GPIO4-to-GPIO16
+jumper is sufficient for a bench keyboard smoke; production multi-key
+matrix/diode acceptance is separate.
+
+`MatrixIO::read()` returns the electrical level: HIGH is true. `Matrix`
+performs the active-low conversion, so logical idle is `0`, and R0/C1
+pressed is bit 1 (`0x02`), not `0x3d`.
+
+Existing NVS keymaps are retained; correcting example default keycodes
+does not replace saved assignments. Re-pair the keyboard after changing
+its report descriptor/identity. The reference now uses the board's native
+BLE identity instead of a shared hardcoded address.
+
+References: [HOGP section 4.8](https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/HOGP_v1.0/out/en/index-en.html)
+and [ESP32 boot mode/strapping](https://docs.espressif.com/projects/esptool/en/latest/esp32/advanced-topics/boot-mode-selection.html).
+
+
 `VIA_ESP32S3_GPIO.h`, `VIA_ESP32S3_NVS.h`, and `VIA_ESP32S3_BLE.h` remain
 for the S3 dual-mode sketch at `examples/ESP32S3_VIA_BLE`, which uses USB
-for VIA configuration and BLE for wireless typing. The S3 BLE HID adapter
-uses the same NimBLE-Arduino 2.x report map as the generic ESP32 adapter,
-and `via::esp32s3::BLEViaTransport` is an alias for the generic
-`via::esp32::BLEViaTransport` implementation.
+for VIA configuration and BLE for wireless typing.
+`via::esp32s3::BLEViaTransport` is an alias for the generic
+`via::esp32::BLEViaTransport` implementation. Its separate HID/GPIO adapters
+need independent verification; WROOM bench results do not certify S3.
+
+#### WROOM authenticated Wi-Fi OTA
+
+The reference sketch includes the ESP32 core's `WiFi` and `ArduinoOTA`
+libraries. No credentials are compiled into the firmware. USB-flash the
+OTA-capable sketch once using the default dual-application partition:
+
+```sh
+arduino-cli compile --fqbn esp32:esp32:esp32 --library . --output-dir .cooper/artifacts/wroom-keyboard-ota examples/ESP32_WROOM32_VIA_BLE
+arduino-cli upload --port COM39 --fqbn esp32:esp32:esp32 --upload-property upload.speed=115200 --input-dir .cooper/artifacts/wroom-keyboard-ota
+python extras/wroom_ota.py provision --port COM39
+```
+
+Interactive provisioning asks for SSID and a hidden Wi-Fi password.
+Automation may supply one JSON object through a non-echoed stdin pipe
+with `ssid` and `password` fields; never put the JSON in source,
+committed files, shell history or diagnostic logs.
+
+The helper generates a separate strong OTA password and saves it in the
+current Windows user's Credential Manager under
+`AirVIA/WROOM/24-6F-28-A0-DB-34`. Override `--credential` when using another
+board. `AIRVIA_OTA_PASSWORD` can instead supply a password from a protected
+environment. Do not log its value or pass it on a process command line.
+The ESP32 stores Wi-Fi settings and only the OTA password hash as one
+Preferences blob (`airvia-ota/config`), separate from keyboard NVS.
+
+The status output includes `[OTA] ip=...`, `[OTA] image=...` and
+`[OTA] slot=...`. After provisioning, update the application by IP:
+
+```sh
+python extras/wroom_ota.py upload --ip <ESP32_IP> --image .cooper/artifacts/wroom-keyboard-ota/ESP32_WROOM32_VIA_BLE.ino.bin --espota "<INSTALLED_ESP32_CORE>/tools/espota.py"
+```
+
+Use only the application `.ino.bin`, never the merged, bootloader or
+partition image. This is a command-line OTA service, not an HTTP upload
+page. Keep OTA support in subsequent firmware. The default OTA slots are
+1310720 bytes each; the combined keyboard/Wi-Fi build must fit one slot.
+The helper's upload callback listens on host TCP3233; allow only the
+ESP32's LAN IP if a scoped firewall rule is needed. ESP32 OTA invitations
+use UDP3232. No COM port is opened for the IP upload.
+
+USB `status --port COM39` can report current IP, image MD5 and active slot.
+DHCP may change the IP; the sketch also advertises a unique `airvia-...`
+hostname via mDNS/Arduino discovery. OTA keeps the keyboard NVS and Wi-Fi
+blob; it does not preserve unsaved in-RAM edits. Release keys and save
+configuration before updating. The firmware releases BLE keys at OTA start.
+
+**Security/recovery boundary:** ArduinoOTA digest authentication is not
+encrypted transport, signed firmware, secure boot, anti-rollback or an
+unattended production deployment system. Use a trusted LAN, no internet
+port-forwarding. NVS is not flash-encrypted by this example. Retain USB
+recovery if Wi-Fi settings are wrong, credentials are lost, or an image
+removes OTA support; normal USB upload does not erase keyboard/Wi-Fi NVS.
+Never use an erase-all command as a recovery default.
+
 
 ### STM32F103 adapters
 

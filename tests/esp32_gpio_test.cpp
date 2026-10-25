@@ -20,14 +20,34 @@ void test_drive_low_and_release() {
   assert(FakeArduino::mode[7] == INPUT_PULLUP);
 }
 
-void test_active_low_read() {
+void test_matrix_press_and_release_polarity() {
   via::esp32::MatrixIOArduino io;
-  io.driveLow(3);
-  // Driven low: key pressed (active-low).
-  assert(io.read(3));
-  // Released high: no key.
-  FakeArduino::value[3] = HIGH;
-  assert(!io.read(3));
+  const via::Pin rows[] = {4};
+  const via::Pin columns[] = {16};
+  uint32_t raw[1] = {}, candidate[1] = {}, stable[1] = {}, changed[1] = {};
+  via::MatrixConfig config = {1, 1, rows, columns, via::kColToRow, 30, 5,
+                              raw, candidate, stable, changed};
+  via::Matrix matrix(config, io);
+  assert(matrix.begin());
+
+  FakeArduino::value[16] = HIGH;
+  matrix.task(0);
+  matrix.task(5);
+  assert(matrix.rawRow(0) == 0);
+  assert(matrix.stableRow(0) == 0);
+
+  FakeArduino::value[16] = LOW;
+  matrix.task(10);
+  matrix.task(15);
+  assert(matrix.stableRow(0) == 1);
+  assert(matrix.changedRow(0) == 1);
+  matrix.hasChanged();
+
+  FakeArduino::value[16] = HIGH;
+  matrix.task(20);
+  matrix.task(25);
+  assert(matrix.stableRow(0) == 0);
+  assert(matrix.changedRow(0) == 1);
 }
 
 void test_delay_microseconds_returns() {
@@ -40,7 +60,7 @@ void test_delay_microseconds_returns() {
 int main() {
   test_input_pullup();
   test_drive_low_and_release();
-  test_active_low_read();
+  test_matrix_press_and_release_polarity();
   test_delay_microseconds_returns();
   std::cout << "All tests passed!" << std::endl;
   return 0;

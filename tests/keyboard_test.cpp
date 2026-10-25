@@ -602,7 +602,7 @@ int main() {
     assert(hid.sendCalls == callsAfterAccept);
   }
 
-  // sendComplete() false while in-flight: task blocks next scan cycle
+  // A release rejected during an in-flight press must survive completion.
   {
     uint16_t km[6]; memcpy(km, defaultKm, sizeof(km));
     via::Config pc(kRows, kCols, 1, km, km, nullptr, 0, 0, 0, 0, 0,
@@ -618,8 +618,15 @@ int main() {
     via::Matrix matrix(mc, io);
     assert(matrix.begin());
 
-    FakeKeyboardHID hid;
-    hid.completeResult = false; // transfer still in flight
+    class BusyKeyboardHID : public FakeKeyboardHID {
+     public:
+      bool send(const via::KeyboardReport& report) override {
+        if (!completeResult) return false;
+        lastReport = report;
+        completeResult = false;
+        return true;
+      }
+    } hid;
     uint16_t ac[6] = {0};
     via::Keyboard keyboard(via::KeyboardConfig{kRows, kCols}, matrix, proto, hid, ac);
     assert(keyboard.begin());
@@ -627,22 +634,17 @@ int main() {
     io.keyMap[100 & 0x1F] = (1U << 0);
     matrix.task(0);
     keyboard.task(0);
-    assert(ac[0] == 0x0004);
-    uint32_t sendCount = hid.sendCalls;
+    assert(hid.lastReport.keys[0] == 0x04);
 
-    // In-flight — task should skip reprocessing, retry send without rebuilding
+    io.keyMap[100 & 0x1F] = 0;  // Release while the accepted press is in flight.
     matrix.task(10);
     keyboard.task(10);
-    assert(hid.sendCalls == sendCount + 1); // one retry
+    assert(hid.lastReport.keys[0] == 0x04);
 
-    // Now complete, same report — no new send
     hid.completeResult = true;
     matrix.task(20);
     keyboard.task(20);
-    uint32_t afterAccept = hid.sendCalls;
-    matrix.task(30);
-    keyboard.task(30);
-    assert(hid.sendCalls == afterAccept); // no extra send, report already accepted
+    assert(hid.lastReport.keys[0] == 0);  // No new physical edge needed.
   }
 
   // Host LED: inject 0x03 (Num+Caps), assert callback receives 0x03

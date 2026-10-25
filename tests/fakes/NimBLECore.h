@@ -8,6 +8,8 @@
 #include <string>
 #include <vector>
 
+#define NIMBLE_MAX_CONNECTIONS 3
+
 // GATT characteristic property flags (real NimBLE host values).
 typedef enum {
     BROADCAST = 0x01,

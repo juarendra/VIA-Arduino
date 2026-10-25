@@ -127,6 +127,7 @@ class Keyboard {
   LayerState layerState_;
   KeyboardReport pendingReport_ = {};
   bool reportPending_ = false;
+  bool reportQueued_ = false;
   KeyboardReport lastAcceptedReport_ = {};
   uint8_t lastHostLeds_ = 0;
   bool wakeRequested_ = false;

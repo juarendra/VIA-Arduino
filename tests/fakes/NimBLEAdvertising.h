@@ -7,6 +7,7 @@ class NimBLEAdvertising {
     ~NimBLEAdvertising();
 
     bool start(uint32_t duration = 0, const NimBLEAddress* dirAddr = nullptr);
+    bool isAdvertising() const { return active_; }
     bool addServiceUUID(const NimBLEUUID& serviceUUID);
     bool setName(const std::string& name);
     const std::vector<std::string>& serviceUuids() const {
@@ -16,6 +17,7 @@ class NimBLEAdvertising {
 
   private:
     friend struct FakeNimBLE;
+    bool active_ = false;
     std::vector<std::string> serviceUuids_;
     std::string name_;
 };

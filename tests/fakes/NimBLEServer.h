@@ -15,6 +15,7 @@ class NimBLEServer {
     bool start();
     uint8_t getConnectedCount() const { return connectedCount_; }
     NimBLEAdvertising* getAdvertising();
+    bool startAdvertising(uint32_t duration = 0);
     NimBLEServerCallbacks* getCallbacks() const { return callbacks_; }
     int startCount() const { return startCount_; }
     std::vector<NimBLEService*>& services() { return services_; }

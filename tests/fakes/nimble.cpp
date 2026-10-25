@@ -88,6 +88,10 @@ NimBLEAdvertising* NimBLEServer::getAdvertising() {
   return &Nimble.advertisingObj;
 }
 
+bool NimBLEServer::startAdvertising(uint32_t duration) {
+  return Nimble.advertisingObj.start(duration);
+}
+
 void NimBLEServer::deactivate() {
   callbacks_ = nullptr;
   connectedCount_ = 0;
@@ -174,6 +178,7 @@ NimBLEAdvertising::~NimBLEAdvertising() {}
 bool NimBLEAdvertising::start(uint32_t duration, const NimBLEAddress* dirAddr) {
   (void)duration;
   (void)dirAddr;
+  active_ = true;
   Nimble.advertisingStartCount++;
   return true;
 }
@@ -206,6 +211,7 @@ void FakeNimBLE::reset() {
   serverObj.deactivate();
   advertisingObj.serviceUuids_.clear();
   advertisingObj.name_.clear();
+  advertisingObj.active_ = false;
   for (int i = 0; i < 4; ++i) servicePool[i].deactivate();
   for (int i = 0; i < 8; ++i) charPool[i].deactivate();
 }
@@ -251,9 +257,9 @@ void FakeNimBLE::dispatchSubscribe(uint16_t subValue) {
 }
 
 void FakeNimBLE::connect() {
-  if (Nimble.serverObj.getConnectedCount() < 255) {
-    Nimble.serverObj.connectedCount_++;
-  }
+  if (Nimble.serverObj.getConnectedCount() >= NIMBLE_MAX_CONNECTIONS) return;
+  Nimble.advertisingObj.active_ = false;
+  Nimble.serverObj.connectedCount_++;
   if (Nimble.serverObj.getCallbacks()) {
     Nimble.serverObj.getCallbacks()->onConnect(&Nimble.serverObj,
                                                Nimble.connInfoObj);

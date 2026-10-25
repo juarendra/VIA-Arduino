@@ -32,11 +32,12 @@ void Keyboard::task(uint32_t /*now*/) {
   }
 
   if (reportPending_) {
-    if (hid_.sendComplete()) {
+    if (reportQueued_ && hid_.sendComplete()) {
       lastAcceptedReport_ = pendingReport_;
       reportPending_ = false;
-    } else {
-      hid_.send(pendingReport_);
+      reportQueued_ = false;
+    } else if (!reportQueued_) {
+      reportQueued_ = hid_.send(pendingReport_);
     }
   }
 
@@ -155,13 +156,13 @@ void Keyboard::task(uint32_t /*now*/) {
   if (reportPending_) {
     if (memcmp(&desired, &pendingReport_, sizeof(desired)) != 0) {
       pendingReport_ = desired;
-      hid_.send(desired);
+      reportQueued_ = hid_.send(desired);
     }
   } else {
     if (memcmp(&desired, &lastAcceptedReport_, sizeof(desired)) != 0) {
       pendingReport_ = desired;
       reportPending_ = true;
-      hid_.send(desired);
+      reportQueued_ = hid_.send(desired);
     }
   }
 

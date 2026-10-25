@@ -32,6 +32,42 @@
 - ESP32 BLE HID input reports expose readable report metadata alongside notifications.
 
 ### Fixed
+- Keep the shared ESP32 HID/VIA server discoverable after a connection:
+  `src/VIA_ESP32_BLE_ViaTransport.cpp` resumes advertising in `onConnect`
+  while below `NIMBLE_MAX_CONNECTIONS`. Previously advertising stopped
+  until disconnect, hiding the device from Windows or AirVIA depending
+  on connection order. `tests/esp32_shared_server_test.cpp` and native
+  fakes cover first-connection visibility, both service orders and capacity.
+  Evidence: advertising regression failed-before exit134; nine native
+  suites, keyboard/shared/parser sanitizers and three host tests passed.
+  WROOM build1226267/RAM64764 was OTA-flashed; real Windows-paired
+  connection stayed active while scanning HID1812+FF60 advertisements.
+  Actual Chrome chooser then connected AirVIA Ready/VIA13 while Windows
+  still reported paired/connected and healthy Keyboard/HID nodes.
+  Impact: configuration discovery no longer requires disconnecting the
+  typing host; subsequent simultaneous typing is user-confirmed below.
+  Porting/evidence updated in `docs/PORTING.md` and
+  `docs/testing/esp32-wroom-2026-10-20.md`. Rollback: compatible prior
+  artifact via OTA preserves NVS but restores the hidden-device defect.
+- Correct accepted-versus-completed HID report tracking in
+  `src/VIA_Keyboard.cpp` and `src/VIA_Keyboard.h`, following the user's
+  report that Windows typing stops while AirVIA is Connected. A failed
+  `send()` previously became completed on the next loop because the BLE
+  adapter's synchronous `sendComplete()` returns true. Retain rejected
+  key-down/key-up reports for retry; do not resubmit accepted in-flight
+  reports merely because completion is pending. No heap allocation added.
+  Regression coverage in `tests/esp32_shared_server_test.cpp` exercises
+  VIA subscription/request/reply plus failed HID press/release delivery;
+  `tests/keyboard_test.cpp` covers a release rejected during an in-flight
+  press. Evidence: shared-path regression failed before fix (exit134),
+  nine native suites and keyboard/shared/parser ASan/UBSan passed after;
+  three OTA host tests passed. WROOM build1226215 bytes/RAM64764 was
+  OTA-flashed; boot image MD5 matched and all90 saved keycodes survived.
+  Impact: transient HID rejection no longer silently drops the current
+  report. The user retested this HID-retry-only image and still reported
+  the Windows concurrency failure; it was not the sole root cause.
+  Rollback: the previous compatible `1cccec6` artifact can be OTA-flashed
+  without erasing NVS, but retains the rejected-report defect.
 - Protocol test expectation updated for the 0.3.x factory-reset semantics:
   without a `CustomValue::reset()` override a successful factory reset
   preserves the active custom value (no distinct default exists to restore).
@@ -89,6 +125,11 @@
   not encrypted transport, signed firmware or production certification.
 
 ### WROOM hardware acceptance — 2026-10-25
+- User subsequently confirmed both simultaneous Windows typing/AirVIA
+  operation and mutual discovery solved on image53591b7c. Record manual
+  user PASS in `docs/testing/esp32-wroom-2026-10-20.md`; no automated HID
+  trace, all-matrix or production claim. The later APP-only disconnect
+  recovery fix requires no firmware reflash or stored-keymap reset.
 - User confirmed that changing the VIA keymap and pressing physical keys
   works on the current ESP32-WROOM fixture. Record this as manual
   user-reported PASS, not an automated per-device key-down/key-up capture.

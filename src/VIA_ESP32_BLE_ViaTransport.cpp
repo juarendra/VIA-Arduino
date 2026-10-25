@@ -34,6 +34,12 @@ class CharCallbacks : public NimBLECharacteristicCallbacks {
 // dead connection is never replayed to a new one.
 class ServerCallbacks : public NimBLEServerCallbacks {
  public:
+  void onConnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo) override {
+    (void)connInfo;
+    // A connection stops advertising; keep HID/VIA discoverable to other peers.
+    if (pServer->getConnectedCount() < NIMBLE_MAX_CONNECTIONS)
+      pServer->startAdvertising(0);
+  }
   void onDisconnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo,
                     int reason) override {
     (void)pServer;

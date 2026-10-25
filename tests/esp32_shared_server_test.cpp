@@ -20,7 +20,7 @@ static bool advertisedIncludes(const std::vector<std::string>& uuids,
   return false;
 }
 
-void test_wroom_shared_server_full_flow() {
+void test_wroom_shared_server_full_flow(bool viaFirst) {
   Nimble.reset();
   assert(NimBLEDevice::init("AirVIA WROOM32"));
   NimBLEServer* server = NimBLEDevice::createServer();
@@ -60,6 +60,11 @@ void test_wroom_shared_server_full_flow() {
                          "0000FF60-0000-1000-8000-00805F9B34FB"));
 
   Nimble.connect();
+  assert(adv->isAdvertising());  // First peer must not hide the other service.
+  if (viaFirst) Nimble.dispatchSubscribe(0x01);
+  Nimble.connect();
+  assert(adv->isAdvertising());
+  if (!viaFirst) Nimble.dispatchSubscribe(0x01);
   assert(hid.configured() == true);
   assert(transport.connected() == true);
 
@@ -73,7 +78,7 @@ void test_wroom_shared_server_full_flow() {
          std::vector<uint8_t>({0x01, 0x00, 0x04, 0, 0, 0, 0, 0}));
 
   // AirVIA request/response over the same shared connection.
-  Nimble.dispatchSubscribe(0x01);
+  assert(server->getConnectedCount() == 2);
   assert(transport.subscribers() == 1);
 
   const int notifyBefore = Nimble.notifyCount;
@@ -89,6 +94,14 @@ void test_wroom_shared_server_full_flow() {
   assert(Nimble.notifyCount == notifyBefore + 1);
   assert(Nimble.lastNotified.size() == 32);
   assert(Nimble.lastNotified[0] == 0xAA);
+
+  while (server->getConnectedCount() < NIMBLE_MAX_CONNECTIONS) {
+    Nimble.connect();
+    assert(adv->isAdvertising() ==
+           (server->getConnectedCount() < NIMBLE_MAX_CONNECTIONS));
+  }
+  assert(hid.send(via::KeyboardReport{}));
+  assert(Nimble.lastNotified == std::vector<uint8_t>(8, 0));
 
   // Disconnect cleanup on the shared server.
   uint8_t pending[32] = {0xBB};
@@ -121,26 +134,46 @@ void test_gpio_press_release_reaches_hid() {
   via::Keyboard keyboard({1, 1}, matrix, protocol, hid, activeCodes);
   assert(matrix.begin() && protocol.begin() && keyboard.begin());
 
+  Nimble.dispatchSubscribe(0x01);
+  uint8_t request[32] = {0x01};
+  assert(Nimble.dispatchWrite(request, sizeof(request)));
+  protocol.task(0);
+  assert(transport.connected() && transport.subscribers() == 1);
+  assert(Nimble.lastNotified.size() == 32);  // VIA reply uses the same link.
+  const int viaReplies = Nimble.notifyCount;
+
   FakeArduino::value[16] = HIGH;
   matrix.task(0); keyboard.task(0);
   matrix.task(5); keyboard.task(5);
-  assert(Nimble.notifyCount == 0);  // An open input must not type.
+  assert(Nimble.notifyCount == viaReplies);  // An open input must not type.
 
+  Nimble.notifySuccess = false;
   FakeArduino::value[16] = LOW;
   matrix.task(10); keyboard.task(10);
   matrix.task(15); keyboard.task(15);
+  assert(Nimble.notifyCount == viaReplies);
+
+  // A rejected notification must recover without another physical key edge.
+  Nimble.notifySuccess = true;
+  matrix.task(20); keyboard.task(20);
   assert(Nimble.lastNotified ==
          std::vector<uint8_t>({0, 0, 0x1A, 0, 0, 0, 0, 0}));
 
+  Nimble.notifySuccess = false;
   FakeArduino::value[16] = HIGH;
-  matrix.task(20); keyboard.task(20);
   matrix.task(25); keyboard.task(25);
+  matrix.task(30); keyboard.task(30);
+  assert(Nimble.lastNotified[2] == 0x1A);  // Host has not received key-up yet.
+
+  Nimble.notifySuccess = true;
+  matrix.task(35); keyboard.task(35);
   assert(Nimble.lastNotified == std::vector<uint8_t>(8, 0));
-  assert(Nimble.notifyCount == 2);
+  assert(transport.connected() && transport.subscribers() == 1);
 }
 
 int main() {
-  test_wroom_shared_server_full_flow();
+  test_wroom_shared_server_full_flow(false);  // Windows/HID first.
+  test_wroom_shared_server_full_flow(true);   // AirVIA first.
   test_gpio_press_release_reaches_hid();
   std::cout << "All tests passed!" << std::endl;
   return 0;

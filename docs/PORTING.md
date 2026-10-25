@@ -227,6 +227,15 @@ ESP32-WROOM-32, which has no USB device peripheral: both VIA configuration
 and typing run over AirVIA BLE. It requires NimBLE-Arduino 2.x from the
 Arduino Library Manager.
 
+The shared VIA server callback restarts advertising after a connection
+while below `NIMBLE_MAX_CONNECTIONS`; the sketch still configures the
+initial HID1812/FF60 advertising payload. Otherwise the first connection
+hides the keyboard from the second discovery flow. The WROOM sketch
+also enables advertising after disconnect. Pair the keyboard in Windows
+and keep that pairing when connecting AirVIA; removing it to make the
+browser discover the board is not the intended workflow. Shared-server
+connection/discovery proof does not replace physical typing acceptance.
+
 The WROOM reference uses rows `{4,19,23,13,14}`, columns
 `{27,16,17,18,21,22}`, and encoder pins `{33,32}`. It avoids classic ESP32
 strapping GPIO0/2/5/12/15 and flash GPIO6-11. GPIO16/17 are only suitable

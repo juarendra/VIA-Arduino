@@ -2,9 +2,144 @@
 #include "VIA_Matrix.h"
 #include "VIA_Protocol.h"
 #include "VIA_Keycodes.h"
+#include "VIA_Macro.h"
 #include <string.h>
 
 namespace via {
+namespace {
+bool containsUsage(const KeyboardReport& report, uint8_t usage) {
+  if (usage >= 0xE0 && usage <= 0xE7)
+    return (report.modifiers & (1U << (usage - 0xE0))) != 0;
+  for (uint8_t key : report.keys) if (key == usage) return true;
+  return false;
+}
+
+bool changeUsage(KeyboardReport& report, uint8_t usage, bool down) {
+  if (usage >= 0xE0 && usage <= 0xE7) {
+    const uint8_t mask = 1U << (usage - 0xE0);
+    if (down) report.modifiers |= mask;
+    else report.modifiers &= static_cast<uint8_t>(~mask);
+    return true;
+  }
+  for (uint8_t& key : report.keys) {
+    if (key == usage) {
+      if (!down) key = 0;
+      return true;
+    }
+  }
+  if (!down) return true;
+  for (uint8_t& key : report.keys) if (!key) { key = usage; return true; }
+  return false;
+}
+
+bool mergeMacro(KeyboardReport& physical, const KeyboardReport& macro) {
+  physical.modifiers |= macro.modifiers;
+  for (uint8_t key : macro.keys) {
+    if (key && (physical.keys[0] == 1 || !changeUsage(physical, key, true))) return false;
+  }
+  return true;
+}
+}  // namespace
+
+bool Keyboard::playMacro(uint8_t slot) {
+  const uint8_t* data = protocol_.macros();
+  const uint16_t size = protocol_.macroBytes();
+  if (macroActive_ || !hid_.configured() || hid_.suspended() || slot >= 128 ||
+      slot >= protocol_.macroCount() || !data || !size || data[size - 1]) return false;
+  uint16_t start = 0;
+  for (uint8_t index = 0; index < slot; ++index) {
+    while (start < size && data[start]) ++start;
+    if (start == size) return false;
+    ++start;
+  }
+  uint16_t end = start;
+  while (end < size && data[end]) ++end;
+  if (end == size || start == end) return false;
+  KeyboardReport held = {};
+  uint16_t offset = start;
+  while (offset < end) {
+    macro_detail::Token token;
+    if (!macro_detail::readToken(data, end, offset, token)) return false;
+    if (token.action == macro_detail::kDelay) continue;
+    if (token.action == macro_detail::kTap) {
+      KeyboardReport tap = held;
+      if (containsUsage(held, token.usage) || !changeUsage(tap, token.usage, true)) return false;
+    } else if (!changeUsage(held, token.usage, token.action == macro_detail::kDown)) {
+      return false;
+    }
+  }
+  macroOffset_ = start;
+  macroEnd_ = end;
+  macroRevision_ = protocol_.macroRevision();
+  macroHeld_ = {};
+  macroReport_ = {};
+  macroPhase_ = kNext;
+  macroActive_ = true;
+  return true;
+}
+
+void Keyboard::cancelMacro() {
+  macroActive_ = false;
+  macroHeld_ = {};
+  macroReport_ = {};
+  if (!reportQueued_) reportPending_ = false;
+  forceReport_ = true;
+}
+
+void Keyboard::advanceMacro(uint32_t now, const KeyboardReport& physical) {
+  if (!macroActive_ || reportPending_ || forceReport_) return;
+  KeyboardReport acknowledged = physical;
+  if (!mergeMacro(acknowledged, macroReport_)) { cancelMacro(); return; }
+  if (memcmp(&acknowledged, &lastAcceptedReport_, sizeof(acknowledged))) return;
+  if (macroPhase_ == kTapPressed) {
+    macroReport_ = macroHeld_;
+    macroPhase_ = kTapReleased;
+    return;
+  }
+  if (macroPhase_ == kTapReleased || macroPhase_ == kHeldChanged) {
+    macroPhase_ = kNext;
+    return;
+  }
+  if (macroPhase_ == kDelay) {
+    if (static_cast<int32_t>(now - macroDue_) >= 0) macroPhase_ = kNext;
+    return;
+  }
+  if (macroPhase_ == kFinishing) {
+    macroActive_ = false;
+    return;
+  }
+  if (macroOffset_ == macroEnd_) {
+    macroHeld_ = {};
+    macroReport_ = {};
+    macroPhase_ = kFinishing;
+    return;
+  }
+  macro_detail::Token token;
+  uint16_t offset = macroOffset_;
+  if (!macro_detail::readToken(protocol_.macros(), macroEnd_, offset, token)) {
+    cancelMacro();
+    return;
+  }
+  if (token.action == macro_detail::kDelay) {
+    macroDue_ = now + token.delay;
+    macroPhase_ = kDelay;
+  } else {
+    KeyboardReport next = macroHeld_;
+    if (token.action == macro_detail::kTap &&
+        (containsUsage(physical, token.usage) || physical.keys[0] == 1)) return;
+    next.modifiers |= token.modifiers;
+    if (!changeUsage(next, token.usage, token.action != macro_detail::kUp)) {
+      cancelMacro();
+      return;
+    }
+    KeyboardReport combined = physical;
+    if (!mergeMacro(combined, next)) return;
+    macroReport_ = next;
+    if (token.action == macro_detail::kTap) macroPhase_ = kTapPressed;
+    else { macroHeld_ = next; macroPhase_ = kHeldChanged; }
+  }
+  macroOffset_ = offset;
+}
 
 Keyboard::Keyboard(const KeyboardConfig& config, Matrix& matrix,
                    Protocol& protocol, KeyboardHID& hid,
@@ -22,7 +157,13 @@ uint32_t Keyboard::stableRow(uint8_t row) const {
   return matrix_.stableRow(row);
 }
 
-void Keyboard::task(uint32_t /*now*/) {
+void Keyboard::task(uint32_t now) {
+  if (macroActive_ && (macroRevision_ != protocol_.macroRevision() ||
+                      !hid_.configured() || hid_.suspended())) cancelMacro();
+  if (!hid_.configured() && forceReport_) {
+    reportPending_ = false;
+    reportQueued_ = false;
+  }
   uint8_t leds;
   while (hid_.takeHostLeds(leds)) {
     if (callbacks_ && leds != lastHostLeds_) {
@@ -31,28 +172,27 @@ void Keyboard::task(uint32_t /*now*/) {
     }
   }
 
-  if (reportPending_) {
-    if (reportQueued_ && hid_.sendComplete()) {
-      lastAcceptedReport_ = pendingReport_;
-      reportPending_ = false;
-      reportQueued_ = false;
-    } else if (!reportQueued_) {
-      reportQueued_ = hid_.send(pendingReport_);
-    }
+  if (reportPending_ && reportQueued_ && hid_.sendComplete()) {
+    lastAcceptedReport_ = pendingReport_;
+    reportPending_ = false;
+    reportQueued_ = false;
   }
 
   uint32_t cRows = matrix_.changedRows();
   bool resumeTransition = wasSuspended_ && !hid_.suspended();
+  if (cRows || resumeTransition) reportNeedsRefresh_ = true;
 
-  if (!cRows && !resumeTransition) {
+  if (!cRows && !resumeTransition && !macroActive_ && !reportPending_ &&
+      !forceReport_ && !reportNeedsRefresh_) {
     wasSuspended_ = hid_.suspended();
     return;
   }
 
   uint32_t savedChanged[8];
-  for (uint8_t r = 0; r < config_.rows; ++r)
-    savedChanged[r] = matrix_.changedRow(r);
-  matrix_.hasChanged();
+  if (cRows) {
+    for (uint8_t r = 0; r < config_.rows; ++r) savedChanged[r] = matrix_.changedRow(r);
+    matrix_.hasChanged();
+  }
 
   const uint8_t rows = config_.rows;
   const uint8_t cols = config_.columns;
@@ -118,6 +258,11 @@ void Keyboard::task(uint32_t /*now*/) {
                                             protocol_.keymap(), r, c, rows, cols);
 
         KeycodeType type = classifyKeycode(code);
+        if (type == KeycodeType::kMacro) {
+          activeCodes_[pos] = code;
+          playMacro(static_cast<uint8_t>(code & 0x7F));
+          continue;
+        }
         if (type == KeycodeType::kLayer || type == KeycodeType::kBoot) {
           if (type == KeycodeType::kBoot) bootPending = true;
           activeCodes_[pos] = code;
@@ -151,20 +296,24 @@ void Keyboard::task(uint32_t /*now*/) {
   wasSuspended_ = false;
   wakeRequested_ = false;
 
-  KeyboardReport desired = buildReport();
-
-  if (reportPending_) {
-    if (memcmp(&desired, &pendingReport_, sizeof(desired)) != 0) {
-      pendingReport_ = desired;
-      reportQueued_ = hid_.send(desired);
-    }
-  } else {
-    if (memcmp(&desired, &lastAcceptedReport_, sizeof(desired)) != 0) {
-      pendingReport_ = desired;
-      reportPending_ = true;
-      reportQueued_ = hid_.send(desired);
-    }
+  const KeyboardReport physical = buildReport();
+  advanceMacro(now, physical);
+  KeyboardReport desired = physical;
+  if (!mergeMacro(desired, macroReport_)) {
+    cancelMacro();
+    desired = physical;
   }
+  if (!reportPending_ || !reportQueued_) reportNeedsRefresh_ = false;
+  if (!reportPending_ &&
+      (forceReport_ || memcmp(&desired, &lastAcceptedReport_, sizeof(desired)))) {
+    pendingReport_ = desired;
+    reportPending_ = true;
+    forceReport_ = false;
+  } else if (reportPending_ && !reportQueued_) {
+    pendingReport_ = desired;
+  }
+  if (reportPending_ && !reportQueued_ && hid_.configured())
+    reportQueued_ = hid_.send(pendingReport_);
 
   if (bootPending && callbacks_)
     callbacks_->bootloaderRequested();

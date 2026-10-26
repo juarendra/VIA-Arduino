@@ -62,9 +62,11 @@ void test_wroom_shared_server_full_flow(bool viaFirst) {
   Nimble.connect();
   assert(adv->isAdvertising());  // First peer must not hide the other service.
   if (viaFirst) Nimble.dispatchSubscribe(0x01);
+  else Nimble.dispatchHidSubscribe(1, 0);
   Nimble.connect();
   assert(adv->isAdvertising());
   if (!viaFirst) Nimble.dispatchSubscribe(0x01);
+  else Nimble.dispatchHidSubscribe(1, 1);
   assert(hid.configured() == true);
   assert(transport.connected() == true);
 
@@ -120,6 +122,7 @@ void test_gpio_press_release_reaches_hid() {
   assert(transport.begin(server, "AirVIA WROOM32", 1));
   server->start();
   Nimble.connect();
+  Nimble.dispatchHidSubscribe(1);
 
   const via::Pin rows[] = {4}, columns[] = {16};
   uint32_t raw[1] = {}, candidate[1] = {}, stable[1] = {}, changed[1] = {};
@@ -171,10 +174,63 @@ void test_gpio_press_release_reaches_hid() {
   assert(transport.connected() && transport.subscribers() == 1);
 }
 
+void test_macro_cancels_when_hid_peer_leaves_configuration_peer() {
+  Nimble.reset();
+  NimBLEDevice::init("AirVIA WROOM32");
+  NimBLEServer* server = NimBLEDevice::createServer();
+  via::esp32::BleKeyboardHID hid;
+  via::esp32::BLEViaTransport transport;
+  assert(hid.begin(server, "AirVIA WROOM32", "AirVIA"));
+  assert(transport.begin(server, "AirVIA WROOM32", 1));
+  server->start();
+  Nimble.connect();
+  Nimble.dispatchSubscribe(1);
+  Nimble.connect();
+  Nimble.dispatchHidSubscribe(1, 1);
+
+  const via::Pin rows[] = {4}, columns[] = {16};
+  uint32_t raw[1] = {}, candidate[1] = {}, stable[1] = {}, changed[1] = {};
+  via::esp32::MatrixIOArduino io;
+  via::MatrixConfig matrixConfig = {1, 1, rows, columns, via::kColToRow, 30, 5,
+                                    raw, candidate, stable, changed};
+  via::Matrix matrix(matrixConfig, io);
+  uint16_t keys[1] = {}, active[1] = {};
+  const uint16_t defaults[] = {0x7700};
+  uint8_t macros[64] = {};
+  via::Config config(1, 1, 1, keys, defaults, macros, sizeof(macros), 1);
+  via::Protocol protocol(config, transport);
+  via::Keyboard keyboard({1, 1}, matrix, protocol, hid, active);
+  assert(matrix.begin() && protocol.begin() && keyboard.begin());
+  uint8_t packet[32] = {0x0F, 0, 0, 13, 1, 2, 0xE0, 1, 4,
+                        '1', '0', '0', '|', 1, 1, 0x06, 0};
+  assert(protocol.process(packet, 0));
+  FakeArduino::value[16] = HIGH;
+  for (uint32_t now = 0; now < 10; ++now) {
+    matrix.task(now); keyboard.task(now);
+  }
+  FakeArduino::value[16] = LOW;
+  for (uint32_t now = 10; now < 30; ++now) {
+    matrix.task(now); keyboard.task(now);
+  }
+  assert(keyboard.macroPlaying() && Nimble.lastNotified[0] == 1);
+  Nimble.disconnectPeer(1);
+  assert(server->getConnectedCount() == 1 && !hid.configured());
+  matrix.task(30); keyboard.task(30);
+  assert(!keyboard.macroPlaying());
+  Nimble.connect();
+  Nimble.dispatchHidSubscribe(1, 1);
+  for (uint32_t now = 31; now < 45; ++now) {
+    matrix.task(now); keyboard.task(now);
+  }
+  assert(!keyboard.macroPlaying());  // A held M0 never replays after reconnect.
+  assert(Nimble.lastNotified == std::vector<uint8_t>(8, 0));
+}
+
 int main() {
   test_wroom_shared_server_full_flow(false);  // Windows/HID first.
   test_wroom_shared_server_full_flow(true);   // AirVIA first.
   test_gpio_press_release_reaches_hid();
+  test_macro_cancels_when_hid_peer_leaves_configuration_peer();
   std::cout << "All tests passed!" << std::endl;
   return 0;
 }

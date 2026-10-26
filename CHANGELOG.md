@@ -3,6 +3,43 @@
 ## [Unreleased]
 
 ### Added
+- Add library-owned, non-blocking dynamic macro playback in
+  `src/VIA_Keyboard.h`, `src/VIA_Keyboard.cpp`, `src/VIA_Macro.h` and
+  `src/VIA_Keycodes.h`: M0..M127, US ASCII, basic HID tap/down/up and
+  decimal 0..65535ms delay. Validate complete programs before emitting,
+  preserve physical keys, wait for conflicts/6KRO space and HID ACK/retry,
+  cancel on edits/disconnect/suspend, and release macro-owned holds.
+  `playMacro`, `cancelMacro` and `macroPlaying` are library APIs; sketches
+  and configuration apps do not interpret or execute macro programs.
+- `src/VIA_Protocol.h` and `src/VIA_Protocol.cpp` expose macro metadata/
+  revision and migrate only exact CRC-valid v2 zero-macro records into
+  enlarged staging without resetting keymap/encoder/layout/custom state.
+  Migrated records stay dirty until normal save/autosave.
+  `examples/ESP32_WROOM32_VIA_BLE/ESP32_WROOM32_VIA_BLE.ino` supplies
+  16 slots/512 bytes and cancels playback at OTA start.
+- `src/VIA_ESP32_BLE.h` now requires a live HID input-report subscriber,
+  not merely a configuration central, for configured/suspended status.
+  Native-width atomics share callback state without heap allocation.
+  `tests/esp32_ble_hid_test.cpp`, `tests/esp32_shared_server_test.cpp`
+  and `tests/fakes/{NimBLECore.h,NimBLEServer.h,NimBLEFake.h,nimble.cpp}`
+  cover separate central handles and HID loss while VIA remains connected.
+- Evidence: `tests/macro_test.cpp` and `tests/macro_storage_test.cpp`
+  join existing regressions: 11 native suites, six ASan/UBSan suites,
+  three host tests, and a standalone real-library consumer passed.
+  The consumer uploaded VIA packets, committed/reloaded, then a matrix
+  trigger emitted A/a/Ctrl+C/delay/!/Enter while preserving physical B.
+  `.github/workflows/ci.yml` runs macro/migration and protocol sanitizer
+  coverage. Initial integration exposed a lost deferred physical release;
+  `reportNeedsRefresh_` fixes it and the existing regression passes.
+  WROOM core3.3.0/NimBLE2.5.1 compile: flash1228811/RAM65844;
+  image SHA256 `791aa6b2cde0214d84ffac88a8ba23163560d9bee570616b3d699d5d7c28c159`.
+  API/README/PORTING and hardware evidence describe ownership and limits.
+  Final consumer also emitted OK! and a clean release with existing
+  classifier values preserved; AVR Uno self-test compile9444/RAM801 passed.
+  Impact: the new image enables library macros; it has NOT been flashed
+  or physically macro-accepted. Rollback: back up first; zero-macro images
+  cannot load the enlarged record after save. Restore a compatible image
+  or explicitly restore the exported keymap, never erase NVS automatically.
 - nRF52840 (nice!nano v2) platform adapters: Bluefruit BLE HID, AirVIA GATT transport, InternalFS (LittleFS) storage.
 - `nice_nano_v2_VIA_BLE` example sketch and VIA JSON definition.
 - Native tests and compile gates for nRF52 adapters.

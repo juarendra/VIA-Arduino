@@ -121,13 +121,15 @@ static uint16_t encoderMap[LAYERS * 2] = {};
 static const uint16_t defaultEncoderMap[LAYERS * 2] = {KC_VOLU, KC_VOLD};
 
 // --- Protocol ---
-// Required staging space = keymap + encoderMap + layoutOptions (4 bytes),
-// per Protocol::requiredLoadBufferSize().
-static uint8_t loadBuffer[sizeof(keymap) + sizeof(encoderMap) + sizeof(uint32_t)] = {};
+static constexpr uint8_t MACRO_COUNT = 16;
+static uint8_t macros[512] = {};
+// Staging includes macros; the library migrates the previous zero-macro record.
+static uint8_t loadBuffer[sizeof(keymap) + sizeof(encoderMap) +
+                          sizeof(macros) + sizeof(uint32_t)] = {};
 
 via::Config protocolConfig = {
     ROWS, COLS, LAYERS, keymap, defaultKeymap,
-    nullptr, 0, 0, 0x00000001, 750, 0, 1, encoderMap, defaultEncoderMap,
+    macros, sizeof(macros), MACRO_COUNT, 0x00000001, 750, 0, 1, encoderMap, defaultEncoderMap,
     loadBuffer, sizeof(loadBuffer)
 };
 
@@ -153,7 +155,10 @@ void setup() {
     delay(200);
     Serial.println(F("[VIA] boot"));
     ota.begin([]() {
-      if (ready) bleHid.send(via::KeyboardReport{});
+      if (ready) {
+        keyboard.cancelMacro();
+        bleHid.send(via::KeyboardReport{});
+      }
     });
     if (!matrix.begin()) {
       Serial.println(F("[VIA] FAIL matrix.begin"));

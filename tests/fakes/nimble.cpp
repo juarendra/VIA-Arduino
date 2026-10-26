@@ -95,6 +95,7 @@ bool NimBLEServer::startAdvertising(uint32_t duration) {
 void NimBLEServer::deactivate() {
   callbacks_ = nullptr;
   connectedCount_ = 0;
+  for (bool& peer : peers_) peer = false;
   started_ = false;
   startCount_ = 0;
   services_.clear();
@@ -208,6 +209,7 @@ void FakeNimBLE::reset() {
   lastNotified.clear();
   serviceIndex = 0;
   charIndex = 0;
+  connInfoObj = NimBLEConnInfo();
   serverObj.deactivate();
   advertisingObj.serviceUuids_.clear();
   advertisingObj.name_.clear();
@@ -256,8 +258,19 @@ void FakeNimBLE::dispatchSubscribe(uint16_t subValue) {
   chr->getCallbacks()->onSubscribe(chr, Nimble.connInfoObj, subValue);
 }
 
+void FakeNimBLE::dispatchHidSubscribe(uint16_t subValue, uint16_t handle) {
+  NimBLECharacteristic* chr = findChar("0x2A4D");
+  if (!chr || !chr->getCallbacks()) return;
+  NimBLEConnInfo info(handle);
+  chr->getCallbacks()->onSubscribe(chr, info, subValue);
+}
+
 void FakeNimBLE::connect() {
   if (Nimble.serverObj.getConnectedCount() >= NIMBLE_MAX_CONNECTIONS) return;
+  uint16_t handle = 0;
+  while (Nimble.serverObj.peers_[handle]) ++handle;
+  Nimble.serverObj.peers_[handle] = true;
+  Nimble.connInfoObj = NimBLEConnInfo(handle);
   Nimble.advertisingObj.active_ = false;
   Nimble.serverObj.connectedCount_++;
   if (Nimble.serverObj.getCallbacks()) {
@@ -267,11 +280,17 @@ void FakeNimBLE::connect() {
 }
 
 void FakeNimBLE::disconnect() {
-  Nimble.serverObj.connectedCount_ = 0;
-  if (Nimble.serverObj.getCallbacks()) {
-    Nimble.serverObj.getCallbacks()->onDisconnect(&Nimble.serverObj,
-                                                   Nimble.connInfoObj, 0x13);
-  }
+  for (uint16_t handle = 0; handle < NIMBLE_MAX_CONNECTIONS; ++handle)
+    disconnectPeer(handle);
+}
+
+void FakeNimBLE::disconnectPeer(uint16_t handle) {
+  if (handle >= NIMBLE_MAX_CONNECTIONS || !Nimble.serverObj.peers_[handle]) return;
+  Nimble.serverObj.peers_[handle] = false;
+  --Nimble.serverObj.connectedCount_;
+  NimBLEConnInfo info(handle);
+  if (Nimble.serverObj.getCallbacks())
+    Nimble.serverObj.getCallbacks()->onDisconnect(&Nimble.serverObj, info, 0x13);
 }
 
 // ---------------------------------------------------------------------------

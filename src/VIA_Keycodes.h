@@ -11,7 +11,8 @@ enum class KeycodeType {
   kModifier,
   kLayer,
   kBoot,
-  kUnsupported
+  kUnsupported,
+  kMacro
 };
 
 inline KeycodeType classifyKeycode(uint16_t code) {
@@ -33,6 +34,8 @@ inline KeycodeType classifyKeycode(uint16_t code) {
       return KeycodeType::kBasic;
     case 0x52:
       return KeycodeType::kLayer;
+    case 0x77:
+      return code <= 0x777F ? KeycodeType::kMacro : KeycodeType::kUnsupported;
     case 0x7C:
       return KeycodeType::kBoot;
     default:

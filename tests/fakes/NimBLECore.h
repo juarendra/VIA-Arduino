@@ -22,7 +22,13 @@ typedef enum {
 
 // Opaque peer types; the transport only passes them by reference.
 class NimBLEAddress {};
-class NimBLEConnInfo {};
+class NimBLEConnInfo {
+  public:
+    explicit NimBLEConnInfo(uint16_t handle = 0) : handle_(handle) {}
+    uint16_t getConnHandle() const { return handle_; }
+  private:
+    uint16_t handle_;
+};
 
 class NimBLEUUID {
   public:

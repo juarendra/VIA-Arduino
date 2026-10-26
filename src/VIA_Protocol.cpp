@@ -60,11 +60,11 @@ bool Protocol::begin(uint32_t nowMs) {
       (storage_ && !loadBufferValid(bytes))) {
     return false;
   }
+  dirty_ = false;
   if (!load()) {
     resetBuffers();
     if (callbacks_) callbacks_->layoutOptionsChanged(layoutOptions_);
   }
-  dirty_ = false;
   saveAt_ = nowMs + config_.autoSaveMs;
   return true;
 }
@@ -233,11 +233,15 @@ bool Protocol::process(uint8_t packet[kPacketSize], uint32_t nowMs) {
           wrote = true;
         }
       }
-      if (wrote) markDirty(nowMs);
+      if (wrote) {
+        ++macroRevision_;
+        markDirty(nowMs);
+      }
       break;
     }
     case 0x10:  // reset macros
       if (config_.macroBytes) memset(config_.macros, 0, config_.macroBytes);
+      ++macroRevision_;
       markDirty(nowMs);
       break;
     case 0x11:  // get layer count
@@ -315,6 +319,7 @@ void Protocol::resetBuffers() {
     memcpy(config_.encoderMap, config_.defaultEncoderMap, encoderMapBytes());
   }
   if (config_.macroBytes) memset(config_.macros, 0, config_.macroBytes);
+  ++macroRevision_;
   layoutOptions_ = config_.defaultLayoutOptions;
   if (customValue_) customValue_->reset();
 }
@@ -399,15 +404,23 @@ bool Protocol::load() {
   if (storage_->capacity() < sizeof(StateHeader) + bytes) return false;
   StateHeader header;
   if (!storage_->read(0, reinterpret_cast<uint8_t*>(&header), sizeof(header)) ||
-      header.magic != kStateMagic || header.version != kStateVersion ||
-      header.payloadSize != bytes) return false;
+      header.magic != kStateMagic || header.version != kStateVersion) return false;
+  const bool migrated = config_.macroBytes && config_.macroCount &&
+                        header.payloadSize == bytes - config_.macroBytes;
+  if (header.payloadSize != bytes && !migrated) return false;
 
-  if (!storage_->read(sizeof(header), config_.loadBuffer, bytes)) return false;
+  if (!storage_->read(sizeof(header), config_.loadBuffer, header.payloadSize)) return false;
   uint32_t crc = 0xFFFFFFFFUL;
-  for (size_t i = 0; i < bytes; ++i) {
+  for (size_t i = 0; i < header.payloadSize; ++i) {
     crc = crc32Update(crc, config_.loadBuffer[i]);
   }
   if (~crc != header.crc) return false;
+  if (migrated) {
+    const size_t prefix = keymapBytes() + encoderMapBytes();
+    memmove(config_.loadBuffer + prefix + config_.macroBytes,
+            config_.loadBuffer + prefix, sizeof(layoutOptions_) + customSize);
+    memset(config_.loadBuffer + prefix, 0, config_.macroBytes);
+  }
 
   const size_t customOffset = bytes - customSize;
   if (customSize &&
@@ -432,7 +445,8 @@ bool Protocol::load() {
   staged += config_.macroBytes;
   memcpy(&layoutOptions_, config_.loadBuffer + staged, sizeof(layoutOptions_));
   if (callbacks_) callbacks_->layoutOptionsChanged(layoutOptions_);
-  dirty_ = false;
+  ++macroRevision_;
+  dirty_ = migrated;
   return true;
 }
 
@@ -536,6 +550,7 @@ bool Protocol::factoryReset() {
   }
   staged += config_.macroBytes;
   memcpy(&layoutOptions_, config_.loadBuffer + staged, sizeof(layoutOptions_));
+  ++macroRevision_;
   dirty_ = false;
   if (callbacks_) {
     callbacks_->layoutOptionsChanged(layoutOptions_);

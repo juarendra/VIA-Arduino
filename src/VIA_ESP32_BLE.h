@@ -3,6 +3,7 @@
 #if defined(ARDUINO_ARCH_ESP32)
 
 #include "VIA_Keyboard.h"
+#include <atomic>
 
 #include <NimBLEAdvertising.h>
 #include <NimBLECharacteristic.h>
@@ -61,7 +62,8 @@ const uint8_t kReportId = 1;
  * service and must run before the server is started so the GATT database is
  * complete. The NimBLEHIDDevice lives for the device lifetime (ESP32 is
  * power-reset, never torn down). */
-class BleKeyboardHID : public via::KeyboardHID {
+class BleKeyboardHID : public via::KeyboardHID,
+                       private NimBLECharacteristicCallbacks {
   public:
   BleKeyboardHID() = default;
   ~BleKeyboardHID() { delete hid_; }
@@ -79,6 +81,8 @@ class BleKeyboardHID : public via::KeyboardHID {
     hid_->setBatteryLevel(100);
     hid_->setReportMap(const_cast<uint8_t*>(kReportMap), sizeof(kReportMap));
     inputReport_ = hid_->getInputReport(kReportId);
+    for (auto& peer : subscribedPeers_) peer.store(0xFFFF, std::memory_order_relaxed);
+    if (inputReport_) inputReport_->setCallbacks(this);
     return inputReport_ != nullptr;
   }
 
@@ -106,11 +110,45 @@ class BleKeyboardHID : public via::KeyboardHID {
   bool remoteWakeup() override { return false; }
 
  private:
-  bool connected() const { return server_ && server_->getConnectedCount() > 0; }
+  void onSubscribe(NimBLECharacteristic*, NimBLEConnInfo& info,
+                   uint16_t value) override {
+    const uint16_t handle = info.getConnHandle();
+    for (auto& peer : subscribedPeers_) {
+      if (peer.load(std::memory_order_relaxed) == handle) {
+        if (!(value & 1U)) peer.store(0xFFFF, std::memory_order_relaxed);
+        return;
+      }
+    }
+    if (value & 1U) {
+      for (auto& peer : subscribedPeers_) {
+        const uint16_t current = static_cast<uint16_t>(peer.load(std::memory_order_relaxed));
+        if (current == 0xFFFF || server_->getPeerMTU(current) == 0) {
+          peer.store(handle, std::memory_order_relaxed);
+          return;
+        }
+      }
+    }
+  }
+
+  bool connected() const {
+    if (!server_ || !inputReport_) return false;
+    bool subscribed = false;
+    for (auto& peer : subscribedPeers_) {
+      uint32_t handle = peer.load(std::memory_order_relaxed);
+      if (handle == 0xFFFF) continue;
+      if (server_->getPeerMTU(static_cast<uint16_t>(handle)) == 0)
+        peer.compare_exchange_strong(handle, 0xFFFF, std::memory_order_relaxed);
+      else subscribed = true;
+    }
+    // A configuration-only central is not an HID delivery target.
+    return subscribed;
+  }
 
   NimBLEServer* server_ = nullptr;
   NimBLEHIDDevice* hid_ = nullptr;
   NimBLECharacteristic* inputReport_ = nullptr;
+  // Native-width atomics share subscription state with NimBLE's callback task.
+  mutable std::atomic<uint32_t> subscribedPeers_[NIMBLE_MAX_CONNECTIONS] = {};
 };
 
 }  // namespace esp32

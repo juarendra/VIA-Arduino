@@ -34,8 +34,10 @@ struct FakeNimBLE {
   static NimBLEService* serviceForChar(const NimBLECharacteristic* chr);
   static bool dispatchWrite(const uint8_t* data, size_t len);
   static void dispatchSubscribe(uint16_t subValue);
+  static void dispatchHidSubscribe(uint16_t subValue, uint16_t handle = 0);
   static void connect();
   static void disconnect();
+  static void disconnectPeer(uint16_t handle);
 };
 
 extern FakeNimBLE Nimble;

@@ -57,9 +57,11 @@ void loop()  { protocol.task(millis()); }
 
 ### Protocol Core (VIA v13)
 
-All VIA protocol v13 commands including dynamic keymaps, macros (storage-only),
-layout options, encoder maps, custom values, factory reset, and bootloader
-jump with optional persistence. See [Supported Commands](#supported-commands).
+VIA protocol v13 commands include dynamic keymaps, macro buffers, layout
+options, encoder maps, custom values, factory reset, and bootloader jump
+with optional persistence. Macro playback belongs to the library's
+`via::Keyboard`, not to a board sketch or configuration application.
+See [Supported Commands](#supported-commands).
 
 ### Matrix Scanner
 
@@ -80,7 +82,8 @@ if (matrix.hasChanged()) { /* ... */ }
 
 Stable press/release event batching, transparent layer lookup, basic/modifier/
 QK_MODS keycodes, and boot-protocol 6KRO reports with busy-endpoint retry,
-host LED feedback, suspend/resume, and remote wake.
+host LED feedback, suspend/resume, remote wake, and non-blocking dynamic
+macros. `M0..M127` (`0x7700..0x777F`) trigger configured QMK/VIA slots.
 
 ```cpp
 #include <VIA_Keyboard.h>
@@ -90,11 +93,25 @@ keyboard.begin();
 keyboard.task(millis());
 ```
 
+The WROOM reference enables 16 slots sharing 512 bytes. The library validates
+each selected program before emitting HID and supports US ASCII text plus
+basic-key tap/down/up and bounded delay commands. No application needs to
+remain open for playback. Physical keys are preserved; macros wait for
+conflicting held usages/6KRO space and cancel on disconnect, suspend or a
+macro-buffer update. Only one macro runs at a time.
+
+Valid zero-macro v2 storage records migrate in the library without resetting
+their keymap, encoder, layout or custom state. Back up before flashing:
+an old zero-macro image cannot read the enlarged record after it is saved.
+The new image is compile/native-smoke verified, not physically macro-accepted
+until flashed and tested. See [Macro API](docs/API.md#dynamic-macros).
+
+
 ### Keycode Classification
 
 Header-only QMK 0.0.8 keycode range decoder supporting `KC_NO`, `KC_TRNS`,
 basic HID usages, physical modifiers, `QK_MODS`, `MO`, `TG`, `TO`, `DF`,
-`QK_BOOT`, and safe no-op for everything else.
+`QK_BOOT`, `M0..M127`, and safe no-op for everything else.
 
 ### Peripherals
 

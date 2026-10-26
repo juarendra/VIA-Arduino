@@ -227,6 +227,22 @@ ESP32-WROOM-32, which has no USB device peripheral: both VIA configuration
 and typing run over AirVIA BLE. It requires NimBLE-Arduino 2.x from the
 Arduino Library Manager.
 
+The reference now allocates 16 dynamic macro slots sharing 512 bytes; all
+playback lives in `via::Keyboard`, with no sketch or host-side interpreter.
+Keep `protocol.task()`, `matrix.task()` and `keyboard.task()` in the main
+loop. The staging workspace includes macro bytes. Exact CRC-valid v2
+zero-macro records migrate without erasing keymap/encoders/layout/custom.
+Back up before flashing and do not blindly roll back to a zero-macro image
+after the enlarged record has been committed. See [Dynamic macros](API.md#dynamic-macros).
+
+`BleKeyboardHID::configured()` requires a live subscriber to the HID input
+report, not just an FF60 configuration central. Native-width atomic slots
+share subscription state with NimBLE's callback task. This lets the library
+cancel held macro modifiers if the typing host disconnects while AirVIA
+remains connected. Other platform adapters still need their own physical
+macro/disconnect acceptance; this is not cross-platform certification.
+
+
 The shared VIA server callback restarts advertising after a connection
 while below `NIMBLE_MAX_CONNECTIONS`; the sketch still configures the
 initial HID1812/FF60 advertising payload. Otherwise the first connection

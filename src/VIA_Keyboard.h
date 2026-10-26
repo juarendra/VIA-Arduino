@@ -114,9 +114,25 @@ class Keyboard {
   bool begin();
   void task(uint32_t now);
   uint32_t stableRow(uint8_t row) const;
+  bool playMacro(uint8_t slot);
+  void cancelMacro();
+  bool macroPlaying() const { return macroActive_; }
 
  private:
   KeyboardReport buildReport() const;
+  void advanceMacro(uint32_t now, const KeyboardReport& physical);
+
+  enum MacroPhase { kNext, kTapPressed, kTapReleased, kHeldChanged, kDelay, kFinishing };
+  MacroPhase macroPhase_ = kNext;
+  KeyboardReport macroHeld_ = {};
+  KeyboardReport macroReport_ = {};
+  uint16_t macroOffset_ = 0;
+  uint16_t macroEnd_ = 0;
+  uint32_t macroRevision_ = 0;
+  uint32_t macroDue_ = 0;
+  bool macroActive_ = false;
+  bool forceReport_ = false;
+  bool reportNeedsRefresh_ = false;
 
   const KeyboardConfig config_;
   Matrix& matrix_;

@@ -42,8 +42,67 @@ kb.stableRow(0);                    // stable debounced row for VIA tester
 ```
 
 Supported keycodes: basic HID usages (0x0004-0x00A4), physical modifiers
-(0x00E0-0x00E7), QK_MODS (0x0100-0x1FFF), MO/TG/TO/DF, QK_BOOT. All other
-values are safe no-ops.
+(0x00E0-0x00E7), QK_MODS (0x0100-0x1FFF), MO/TG/TO/DF, QK_BOOT,
+and dynamic macros M0..M127 (0x7700..0x777F). Other values are safe no-ops.
+
+### Dynamic macros
+
+Playback, parsing and HID scheduling are owned by `via::Keyboard` in the
+library. The sketch supplies caller-owned storage through `via::Config`
+before constructing `Protocol`: `macros`, `macroBytes`, and `macroCount`.
+The WROOM reference supplies 512 bytes and 16 slots; include macro bytes
+in the caller's load/reset staging workspace when using persistent storage.
+
+- `keyboard.playMacro(slot)` starts a valid, non-empty configured slot when
+  HID is configured and no other macro is running; otherwise returns false.
+  Matrix assignments `0x7700 + slot` call it automatically on the press edge.
+- `keyboard.macroPlaying()` remains true through the final release ACK.
+  A second trigger while busy is ignored, not queued; holding a trigger
+  does not repeat playback.
+- `keyboard.cancelMacro()` stops parsing immediately. Continue calling
+  `keyboard.task(millis())` to deliver/retry the physical-only release.
+  Disconnect, suspend and protocol macro-buffer mutation cancel automatically.
+- `Protocol::macros()`, `macroBytes()`, `macroCount()` and `macroRevision()`
+  expose read-only metadata to the runner. Use protocol writes/reset, or
+  cancel before local buffer changes; direct pointer mutation bypasses the
+  revision notification.
+
+Slots are consecutive NUL-terminated byte strings, starting with M0 at
+offset 0. There is no extra leading NUL. Unused bytes are zero. The last
+buffer byte must be zero before playback; a host should set it to `0xFF`
+before uploading, write the content, finalize it to zero, commit `09 02`,
+and verify the full buffer with `0E` reads.
+
+The independent decoder follows the
+[QMK send-string wire format](https://github.com/qmk/qmk_firmware/blob/master/quantum/send_string/send_string.c):
+
+| Bytes | Action |
+|---|---|
+| Printable ASCII | Tap US-layout key, with Shift when needed |
+| `09`, `0A`, `08`, `1B`, `7F` | Tab, Enter, Backspace, Escape, Delete |
+| `01 01 <usage>` | Tap basic HID usage |
+| `01 02 <usage>` | Hold basic HID usage/modifier |
+| `01 03 <usage>` | Release macro-owned usage/modifier |
+| `01 04 <decimal digits> 7C` | Delay 0..65535 milliseconds (pipe delimiter) |
+
+For example, Ctrl+C is `01 02 E0 01 01 06 01 03 E0 00`. Unsupported,
+truncated or unterminated programs are rejected before any output.
+Unicode, consumer/system usages and arbitrary QMK opcodes are not claimed.
+Unbalanced holds are released at completion. Delay scheduling is wrap-safe,
+non-blocking and allocation-free, using the same HID ACK/retry path as keys.
+
+Physical keys/modifiers are merged, not cleared to force a macro tap.
+Conflicting held usages and a full 6KRO report defer the next tap; physical
+input that overfills an already active macro report cancels it. Host layout,
+Caps Lock and physical modifiers still affect text as on any keyboard.
+
+When enabling macros on a previously zero-macro configuration, `load()`
+accepts only the exact legacy v2 payload length with a valid CRC, expands
+the staged macro region to zeros and preserves all other state. The migrated
+record stays dirty until normal save/autosave. Corrupt/unknown records are
+not reinterpreted. Back up before updating; an older zero-macro firmware
+does not understand the enlarged saved payload.
+
 
 ## Keycode Classification
 

@@ -143,6 +143,10 @@ class Protocol {
   uint8_t columns() const { return config_.columns; }
   uint8_t layers() const { return config_.layers; }
   const uint16_t* keymap() const { return config_.keymap; }
+  const uint8_t* macros() const { return config_.macros; }
+  uint16_t macroBytes() const { return config_.macroBytes; }
+  uint8_t macroCount() const { return config_.macroCount; }
+  uint32_t macroRevision() const { return macroRevision_; }
   uint16_t keycode(uint8_t layer, uint8_t row, uint8_t column) const;
   bool setKeycode(uint8_t layer, uint8_t row, uint8_t column, uint16_t value);
   uint32_t layoutOptions() const { return layoutOptions_; }
@@ -170,6 +174,7 @@ class Protocol {
   CustomValue* customValue_;
   Callbacks* callbacks_;
   bool dirty_;
+  uint32_t macroRevision_ = 0;
   uint32_t saveAt_;
   uint32_t layoutOptions_;
   uint8_t pendingResponse_[kPacketSize];

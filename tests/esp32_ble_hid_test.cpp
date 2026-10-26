@@ -72,6 +72,7 @@ void test_hid_connected_notifies_report() {
 
     server->start();
     Nimble.connect();
+    Nimble.dispatchHidSubscribe(1);
     assert(hid.configured() == true);
     assert(hid.suspended() == false);
 
@@ -93,11 +94,37 @@ void test_hid_connected_notifies_report() {
     assert(Nimble.lastNotified == std::vector<uint8_t>(8, 0));
 }
 
+void test_configuration_peer_is_not_a_keyboard_host() {
+    Nimble.reset();
+    NimBLEServer* server = makeServer();
+    via::esp32::BleKeyboardHID hid;
+    assert(hid.begin(server, "AirVIA WROOM32", "AirVIA"));
+    server->start();
+    Nimble.connect();  // Configuration central, no HID subscription.
+    assert(server->getConnectedCount() == 1);
+    assert(!hid.configured() && hid.suspended());
+    assert(!hid.send(via::KeyboardReport{}));
+
+    Nimble.connect();  // Keyboard host has handle1.
+    Nimble.dispatchHidSubscribe(1, 1);
+    Nimble.dispatchHidSubscribe(1, 1);  // Repeated CCCD events are idempotent.
+    assert(hid.configured());
+    Nimble.dispatchHidSubscribe(0, 1);
+    assert(!hid.configured());
+    Nimble.dispatchHidSubscribe(1, 1);
+    assert(hid.configured());
+    Nimble.disconnectPeer(1);  // No unsubscribe callback is required.
+    assert(server->getConnectedCount() == 1);
+    assert(!hid.configured() && hid.suspended());
+    assert(!hid.send(via::KeyboardReport{}));
+}
+
 int main() {
     test_hid_begin_rejects_null_server();
     test_hid_begin_attaches_shared_service();
     test_hid_unconnected_rejects();
     test_hid_connected_notifies_report();
+    test_configuration_peer_is_not_a_keyboard_host();
     std::cout << "All tests passed!" << std::endl;
     return 0;
 }
